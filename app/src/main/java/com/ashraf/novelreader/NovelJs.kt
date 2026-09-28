@@ -67,6 +67,7 @@ object NovelJs {
   for(const part of finalParts){
     const p=document.createElement('p');
     p.textContent=part;
+    if(finalParts.length>0 && part===finalParts[0]) p.className='nr-title';
     if(oldParagraph){
       const cs=getComputedStyle(oldParagraph);
       if(cs.marginTop)p.style.marginTop=cs.marginTop;
@@ -87,10 +88,12 @@ object NovelJs {
 
   // Keep a comfortable reading inset after replacing the original chapter DOM.
   el.style.boxSizing='border-box';
-  el.style.paddingLeft='16px';
-  el.style.paddingRight='16px';
+  el.style.paddingLeft='18px';
+  el.style.paddingRight='18px';
   el.style.width='100%';
-  el.style.maxWidth='100%';
+  el.style.maxWidth='720px';
+  el.style.marginLeft='auto';
+  el.style.marginRight='auto';
   el.style.textAlign='left';
 
   el.setAttribute('data-novelreaderx-translated','1');
