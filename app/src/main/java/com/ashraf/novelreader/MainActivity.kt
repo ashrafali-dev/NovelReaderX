@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private var baselineHash=""
     private var stableSince=0L
     private var lastObserved=""
+    private var viewMode=0 // 0 split, 1 novel, 2 chatbot
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -84,18 +85,18 @@ class MainActivity : Activity() {
         val controls=LinearLayout(this).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
-            setPadding(dp(4),dp(3),dp(4),dp(3))
+            setPadding(dp(2),dp(2),dp(2),dp(2))
         }
-        controls.addView(btn("‹ Prev"){navigate("prev")})
-        controls.addView(btn("⚡ Extract"){instant()})
-        controls.addView(btn("Next ›"){navigate("next")})
-        controls.addView(btn("½ Split"){split.resetHalf()})
-        controls.addView(btn("Prompt"){editPrompt()})
+        controls.addView(iconBtn("‹","Previous"){navigate("prev")})
+        controls.addView(iconBtn("⚡","Extract"){instant()})
+        controls.addView(iconBtn("›","Next"){navigate("next")})
+        controls.addView(iconBtn("◫","Cycle novel / chatbot / split"){cycleView()})
+        controls.addView(iconBtn("✎","Prompt"){editPrompt()})
         AiProvider.entries.forEach { p ->
-            controls.addView(btn(p.label){switchProvider(p)})
+            controls.addView(iconBtn(providerIcon(p),"Use ${p.label}"){switchProvider(p)})
         }
         bottom.addView(controls)
-        root.addView(bottom,LinearLayout.LayoutParams(-1,dp(52)))
+        root.addView(bottom,LinearLayout.LayoutParams(-1,dp(46)))
 
         setContentView(root)
     }
@@ -242,7 +243,7 @@ class MainActivity : Activity() {
             return
         }
         if(WebNovelAdapter.isWebNovel(old.url)){
-            novel.evaluateJavascript(WebNovelAdapter.navigateFromCatalogScript(dir,old.title)){raw->
+            novel.evaluateJavascript(WebNovelAdapter.navigateFromCatalogScript(dir,old.title,old.url)){raw->
                 val result=raw?.unquoteJs().orEmpty()
                 if(result.startsWith("http")){
                     novel.loadUrl(result)
@@ -257,6 +258,39 @@ class MainActivity : Activity() {
             if(result.startsWith("http"))novel.loadUrl(result)
             else handler.postDelayed({fastExtract(0,session,novel.url.orEmpty())},120)
         }
+    }
+
+    private fun cycleView(){
+        viewMode=(viewMode+1)%3
+        when(viewMode){
+            0 -> { split.showSplit(); status("Split view") }
+            1 -> { split.showNovelOnly(); status("Novel view") }
+            2 -> { split.showAiOnly(); status("Chatbot view") }
+        }
+    }
+
+    private fun providerIcon(p:AiProvider)=when(p){
+        AiProvider.CHATGPT -> "G"
+        AiProvider.GEMINI -> "✦"
+        AiProvider.CLAUDE -> "C"
+        AiProvider.DEEPSEEK -> "D"
+        AiProvider.GROK -> "X"
+    }
+
+    private fun iconBtn(icon:String,description:String,action:()->Unit)=Button(this).apply{
+        text=icon
+        contentDescription=description
+        setTextColor(Color.WHITE)
+        textSize=18f
+        minWidth=0
+        minimumWidth=0
+        minHeight=0
+        minimumHeight=0
+        setPadding(0,0,0,0)
+        layoutParams=LinearLayout.LayoutParams(dp(42),dp(40)).apply{
+            setMargins(dp(2),0,dp(2),0)
+        }
+        setOnClickListener{action()}
     }
 
     private fun switchProvider(p:AiProvider){
