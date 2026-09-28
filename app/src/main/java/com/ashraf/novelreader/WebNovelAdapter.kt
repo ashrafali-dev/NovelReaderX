@@ -64,7 +64,7 @@ object WebNovelAdapter {
  const doc=new DOMParser().parseFromString(html,'text/html');
  const links=[...doc.querySelectorAll('.j_catalog_list .volume-item li a[href], .j_catalog_list a[href], a[href]')].map(a=>({p:clean(a.href),t:strip(a.getAttribute('title')||a.getAttribute('aria-label')||a.textContent)})).filter(x=>x.t&&x.p.startsWith(book+'/')&&!/\/catalog$/i.test(x.p));
  if(!links.length)return 'none';
- const cur=strip(title); let idx=links.findIndex(x=>x.t===cur);
+ const cur=strip(title); const currentPath=new URL(currentUrl,location.href).pathname.replace(/\/+$/,""); let idx=links.findIndex(x=>new URL(x.p,location.href).pathname.replace(/\/+$/,"")===currentPath); if(idx<0)idx=links.findIndex(x=>x.t===cur);
  if(idx<0){let best=-1,bs=0;const words=cur.split(/\s+/).filter(x=>x.length>=3);links.forEach((x,i)=>{let s=words.reduce((n,w)=>n+(x.t.includes(w)?(w.length>=5?3:1):0),0);if(s>bs){bs=s;best=i}});if(bs>=3)idx=best;}
  if(idx<0)return 'no-current'; const ni=dir==='next'?idx+1:idx-1;if(ni<0||ni>=links.length)return 'edge';
  return new URL(links[ni].p,location.origin).href;
