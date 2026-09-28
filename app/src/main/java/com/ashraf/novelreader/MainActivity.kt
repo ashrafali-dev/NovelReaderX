@@ -64,7 +64,7 @@ class MainActivity : Activity() {
             layoutParams=LinearLayout.LayoutParams(0,dp(40),1f)
         }
         urlBar.addView(url)
-        urlBar.addView(btn("GO"){ val u=url.text.toString().trim(); if(u.isNotBlank()) novel.loadUrl(u) })
+        urlBar.addView(btn("GO"){ val u=url.text.toString().trim(); if(u.isNotBlank()) loadNovelOrSearch(u) })
         root.addView(urlBar)
 
         status=TextView(this).apply {
