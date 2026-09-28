@@ -298,6 +298,7 @@ class MainActivity : Activity() {
             "▣ Split view",
             "📖 Novel only",
             "💬 Chatbot only",
+            "↩ Restore original chapter",
             "✎ Translation prompt"
         )
         AlertDialog.Builder(this)
@@ -310,7 +311,8 @@ class MainActivity : Activity() {
                     3 -> {viewMode=0;split.showSplit()}
                     4 -> {viewMode=1;split.showNovelOnly()}
                     5 -> {viewMode=2;split.showAiOnly()}
-                    6 -> editPrompt()
+                    6 -> novel.evaluateJavascript(NovelJs.restoreOriginal()){status("Original chapter restored")}
+                    7 -> editPrompt()
                 }
             }.show()
     }
