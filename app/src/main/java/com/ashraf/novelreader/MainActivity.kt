@@ -34,11 +34,28 @@ class MainActivity : Activity() {
     private var viewMode=0 // 0 split, 1 novel, 2 chatbot
     private var autoSendOnLoad=false
     private var searchEngine="Google"
+    private var readerNight=false
+    private var readerFontSize=20
+    private var pulseButton:Button?=null
+    private var nextButton:Button?=null
+    private val pulse=object:Runnable{
+        override fun run(){
+            pulseButton?.animate()?.scaleX(1.06f)?.scaleY(1.06f)?.setDuration(280)?.withEndAction{
+                pulseButton?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(280)?.start()
+            }?.start()
+            nextButton?.animate()?.scaleX(1.04f)?.scaleY(1.04f)?.setDuration(280)?.withEndAction{
+                nextButton?.animate()?.scaleX(1f)?.scaleY(1f)?.setDuration(280)?.start()
+            }?.start()
+            handler.postDelayed(this,2400)
+        }
+    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         promptStore=PromptStore(this)
         searchEngine=getPreferences(0).getString("search_engine","Google") ?: "Google"
+        readerNight=getPreferences(0).getBoolean("reader_night",false)
+        readerFontSize=getPreferences(0).getInt("reader_font_size",20).coerceIn(18,24)
         buildUi()
         configureWebViews()
         novel.loadUrl("https://www.webnovel.com/")
@@ -83,22 +100,41 @@ class MainActivity : Activity() {
         root.addView(split,LinearLayout.LayoutParams(-1,0,1f))
 
         val bottom=FrameLayout(this).apply {
-            setBackgroundColor(Color.rgb(28,28,34))
+            setBackgroundColor(Color.rgb(24,24,29))
+            setPadding(dp(4),dp(2),dp(4),dp(2))
         }
-        val controls=LinearLayout(this).apply {
+        val more=iconBtn("⋮","More options"){showMenu()}.apply{
+            layoutParams=FrameLayout.LayoutParams(dp(46),dp(42),Gravity.START or Gravity.CENTER_VERTICAL)
+        }
+        val center=LinearLayout(this).apply{
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER
-            setPadding(dp(2),dp(2),dp(2),dp(2))
-            layoutParams=FrameLayout.LayoutParams(-1,-1)
+            layoutParams=FrameLayout.LayoutParams(-2,-1,Gravity.CENTER)
         }
-        controls.addView(iconBtn("⚡","Instant Extract"){instant()})
-        controls.addView(iconBtn("›","Next chapter"){navigate("next")})
-        controls.addView(iconBtn("G","ChatGPT"){switchProvider(AiProvider.CHATGPT)})
-        controls.addView(iconBtn("✦","Gemini"){switchProvider(AiProvider.GEMINI)})
-        controls.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
-        controls.addView(iconBtn("⋮","More options"){showMenu()})
-        bottom.addView(controls)
-        root.addView(bottom,LinearLayout.LayoutParams(-1,dp(46)))
+        pulseButton=iconBtn("⚡","Instant Extract"){instant()}.apply{
+            layoutParams=LinearLayout.LayoutParams(dp(52),dp(42)).apply{setMargins(dp(4),0,dp(4),0)}
+            textSize=22f
+        }
+        nextButton=iconBtn("›","Next chapter"){navigate("next")}.apply{
+            layoutParams=LinearLayout.LayoutParams(dp(52),dp(42)).apply{setMargins(dp(4),0,dp(4),0)}
+            textSize=23f
+        }
+        center.addView(pulseButton)
+        center.addView(nextButton)
+
+        val right=LinearLayout(this).apply{
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER_VERTICAL
+            layoutParams=FrameLayout.LayoutParams(-2,-1,Gravity.END or Gravity.CENTER_VERTICAL)
+        }
+        right.addView(iconBtn("G","ChatGPT"){switchProvider(AiProvider.CHATGPT)})
+        right.addView(iconBtn("✦","Gemini"){switchProvider(AiProvider.GEMINI)})
+        right.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
+        bottom.addView(more)
+        bottom.addView(center)
+        bottom.addView(right)
+        root.addView(bottom,LinearLayout.LayoutParams(-1,dp(48)))
+        handler.postDelayed(pulse,1200)
 
         setContentView(root)
     }
@@ -113,6 +149,7 @@ class MainActivity : Activity() {
             override fun onPageFinished(v:WebView,url:String){
                 super.onPageFinished(v,url)
                 if(AdBlock.enabled(this@MainActivity)) v.evaluateJavascript(AdBlock.cosmeticJs(),null)
+                v.evaluateJavascript(ReaderStyle.apply(readerNight,readerFontSize),null)
                 session++
                 aiJob++
                 current=null
@@ -269,6 +306,7 @@ class MainActivity : Activity() {
         if(ch.id!=current?.id)return
         novel.evaluateJavascript(NovelJs.insertTranslation(text)){result->
             val ok=result?.contains("inserted") == true
+            if(ok) novel.evaluateJavascript(ReaderStyle.apply(readerNight,readerFontSize),null)
             status(if(ok) "✓ Translation inserted into ${ch.number.ifBlank{"chapter"}}" else "⚠ Translation could not be inserted")
         }
         CookieStore.flush()
@@ -373,7 +411,7 @@ class MainActivity : Activity() {
         val items=arrayOf(
             "‹ Previous chapter","↻ Reload novel page","↻ Reload chatbot",
             "⌫ Clear chatbot input","▣ Split view","📖 Novel only","💬 Chatbot only",
-            "↩ Restore original chapter","✎ Translation prompt",
+            "↩ Restore original chapter","✎ Translation prompt","Aa Reader style",
             "AI provider: ${provider.label}","Search engine: $searchEngine","Ad blocker: $ad"
         )
         AlertDialog.Builder(this).setTitle("NovelReaderX").setItems(items){_,which->
@@ -383,10 +421,41 @@ class MainActivity : Activity() {
                 4->{viewMode=0;split.showSplit()};5->{viewMode=1;split.showNovelOnly()}
                 6->{viewMode=2;split.showAiOnly()}
                 7->novel.evaluateJavascript(NovelJs.restoreOriginal()){status("Original chapter restored")}
-                8->editPrompt();9->chooseProvider();10->chooseSearchEngine()
-                11->{AdBlock.setEnabled(this,!AdBlock.enabled(this));status("Ad blocker "+if(AdBlock.enabled(this))"ON" else "OFF");novel.reload()}
+                8->editPrompt();9->readerSettings();10->chooseProvider();11->chooseSearchEngine()
+                12->{AdBlock.setEnabled(this,!AdBlock.enabled(this));status("Ad blocker "+if(AdBlock.enabled(this))"ON" else "OFF");novel.reload()}
             }
         }.show()
+    }
+
+    private fun readerSettings(){
+        val sizes=arrayOf("18 px","20 px","22 px","24 px")
+        val current=sizes.indexOf("${readerFontSize} px").coerceAtLeast(0)
+        val box=CheckBox(this).apply{
+            text="Night mode"
+            isChecked=readerNight
+            setTextColor(Color.WHITE)
+            setPadding(dp(8),dp(12),dp(8),dp(12))
+        }
+        val panel=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            setPadding(dp(8),0,dp(8),0)
+            addView(box)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Reader style")
+            .setSingleChoiceItems(sizes,current){_,which->
+                readerFontSize=18+which*2
+                getPreferences(0).edit().putInt("reader_font_size",readerFontSize).apply()
+                novel.evaluateJavascript(ReaderStyle.apply(readerNight,readerFontSize),null)
+            }
+            .setView(panel)
+            .setPositiveButton("Apply"){_,_->
+                readerNight=box.isChecked
+                getPreferences(0).edit().putBoolean("reader_night",readerNight).apply()
+                novel.evaluateJavascript(ReaderStyle.apply(readerNight,readerFontSize),null)
+                status(if(readerNight)"Night reader • ${readerFontSize}px" else "Day reader • ${readerFontSize}px")
+            }
+            .show()
     }
 
     private fun chooseProvider(){
