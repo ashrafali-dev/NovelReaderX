@@ -24,12 +24,12 @@ object ProviderScripts {
 (function(){
  const text=$q;
  const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2};
- let box=null; for(const s of ${JSONObject.quote(inputs.joinToString("\u0000"))}.split('\u0000')){try{box=[...document.querySelectorAll(s)].find(vis);if(box)break}catch(e){}}
+ let box=null; for(const s of ${JSONObject.quote(inputs.joinToString("__SEP__"))}.split('__SEP__')){try{box=[...document.querySelectorAll(s)].find(vis);if(box)break}catch(e){}}
  if(!box)return 'nobox';
  if(box.matches('textarea,input')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')||Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');try{p.set.call(box,text)}catch(e){box.value=text}}
  else{box.focus();document.execCommand('selectAll');document.execCommand('insertText',false,text);if(!(box.innerText||'').trim())box.textContent=text}
  box.dispatchEvent(new Event('input',{bubbles:true}));box.dispatchEvent(new Event('change',{bubbles:true}));
- setTimeout(()=>{let b=null;for(const s of ${JSONObject.quote(sends.joinToString("\u0000"))}.split('\u0000')){try{b=[...document.querySelectorAll(s)].find(x=>vis(x)&&!x.disabled&&x.getAttribute('aria-disabled')!=='true');if(b)break}catch(e){}}if(b)b.click();else box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));},20);
+ setTimeout(()=>{let b=null;for(const s of ${JSONObject.quote(sends.joinToString("__SEP__"))}.split('__SEP__')){try{b=[...document.querySelectorAll(s)].find(x=>vis(x)&&!x.disabled&&x.getAttribute('aria-disabled')!=='true');if(b)break}catch(e){}}if(b)b.click();else box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));},20);
  return 'sent';
 })()
 """.trimIndent()
