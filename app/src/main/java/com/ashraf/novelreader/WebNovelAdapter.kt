@@ -83,7 +83,8 @@ object WebNovelAdapter {
    }
    return target?.href||null;
  }
- return JSON.stringify({ok:true,url:location.href,title,num,text:body,next:pick(true),prev:pick(false)});
+ const chapterText=title?(title+'\n\n'+body):body;
+ return JSON.stringify({ok:true,url:location.href,title,num,text:chapterText,next:pick(true),prev:pick(false)});
 })()
 """.trimIndent()
     fun buildChapter(raw: String): Chapter? = runCatching {
