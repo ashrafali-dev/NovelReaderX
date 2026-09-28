@@ -130,9 +130,9 @@ class MainActivity : Activity() {
         right.addView(iconBtn("G","ChatGPT"){switchProvider(AiProvider.CHATGPT)})
         right.addView(iconBtn("✦","Gemini"){switchProvider(AiProvider.GEMINI)})
         right.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
-        bottom.addView(more)
-        bottom.addView(center)
+        // Left: view controls. Right: menu.
         bottom.addView(right)
+        bottom.addView(more)
         root.addView(bottom,LinearLayout.LayoutParams(-1,dp(48)))
         handler.postDelayed(pulse,1200)
 
@@ -322,7 +322,8 @@ class MainActivity : Activity() {
         lastObserved=""
         stableSince=0L
         status("Loading ${if(dir=="next")"next" else "previous"} chapter…")
-        autoSendOnLoad=true
+        // Next only changes the novel page. Translation starts when Instant Extract is pressed.
+        autoSendOnLoad=false
 
         ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
 
