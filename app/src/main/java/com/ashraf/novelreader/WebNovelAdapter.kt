@@ -49,8 +49,9 @@ object WebNovelAdapter {
         if(i>=0 && i+1<seg.size) "${u.scheme}://${u.host}/book/${seg[i+1]}/catalog" else null
     }.getOrNull()
 
-    fun navigateFromCatalogScript(dir: String, title: String): String {
+    fun navigateFromCatalogScript(dir: String, title: String, currentUrl: String): String {
         val t=JSONObject.quote(title)
+        val u=JSONObject.quote(currentUrl)
         val d=JSONObject.quote(dir)
         return """
 (async function(){
