@@ -9,26 +9,83 @@ object WebNovelAdapter {
     /** Fast DOM extraction. It does not wait for a timer: it reads the live reader DOM immediately. */
     fun extractScript(): String = """
 (function(){
- const clean=s=>(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n').trim();
- const textOf=e=>{if(!e)return '';const c=e.cloneNode(true);c.querySelectorAll('script,style,noscript,button,svg,img,video,iframe,[aria-hidden="true"]').forEach(x=>x.remove());c.querySelectorAll('br').forEach(x=>x.replaceWith('\n'));return clean(c.innerText||c.textContent||'');};
- const sels=['#chapter-content','.chapter-content','.chapter_content','.cha-content','.chapter-body','.j_readContent','.txt','#chaptercontent','.chapter-c','article .chapter-content','main article','article'];
- let best=null,bestLen=0;
- for(const s of sels){try{for(const e of document.querySelectorAll(s)){const t=textOf(e);if(t.length>bestLen){best=e;bestLen=t.length;}}}catch(e){}}
- if(!best){for(const e of document.querySelectorAll('main,article,section,div')){const t=textOf(e);if(t.length>bestLen&&t.length>500){best=e;bestLen=t.length;}}}
+ const host=(location.hostname||'').toLowerCase();
+ const isWebNovel=host==='webnovel.com'||host.endsWith('.webnovel.com');
+ const clean=s=>(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+ const BAD='script,style,noscript,iframe,nav,header,footer,aside,form,button,svg,img,video,[aria-hidden="true"],.ads,.ad,[class*="advert" i],[id*="advert" i],[class*="comment" i],[id*="comment" i],[class*="sidebar" i],[class*="toolbar" i],[class*="reader-nav" i],[class*="chapter-nav" i],.j_catalog_list,.j_readTool';
+ const textOf=e=>{
+   if(!e)return '';
+   const c=e.cloneNode(true);
+   try{c.querySelectorAll(BAD).forEach(x=>x.remove())}catch(_){}
+   c.querySelectorAll('br').forEach(x=>x.replaceWith('\n'));
+   const ps=[...c.querySelectorAll('p')].map(x=>clean(x.innerText||x.textContent)).filter(x=>x.length>0);
+   if(ps.length>=2)return ps.join('\n\n');
+   const blocks=[...c.querySelectorAll(':scope > div, :scope > section, :scope > article')].map(x=>clean(x.innerText||x.textContent)).filter(x=>x.length>0);
+   if(blocks.length>=2)return blocks.join('\n\n');
+   return clean(c.innerText||c.textContent||'');
+ };
+ const noise=s=>(s.match(/closechapters|prevnext|download app|read offline|lora|roboto|10\.4%/gi)||[]).length;
+ const candidates=isWebNovel
+   ? ['.j_readContent','.cha-content','.chapter-content','#chapter-content','.chapter-body','.chapter-c','.txt','#chaptercontent','.content','article']
+   : ['#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c','.reading-content','.text-left','#content','.entry-content','.cha-content','.cha-words','.chapter-body','.novel_content','.j_readContent','.txt','#chaptercontent','.chapter-c','#article','.article-content','.content','article'];
+ let best=null,bestLen=0,bestScore=-Infinity,bestSelector='';
+ for(const sel of candidates){
+   try{
+     for(const e of document.querySelectorAll(sel)){
+       const t=textOf(e);
+       if(t.length<300)continue;
+       const pc=e.querySelectorAll('p').length;
+       const n=noise(t);
+       const score=t.length+Math.min(pc,30)*450-n*1200+(sel==='.j_readContent'?3000:0);
+       if((pc>=2||sel==='.j_readContent'||sel==='.cha-content')&&score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector=sel;}
+     }
+   }catch(_){}
+ }
+ if(!best){
+   for(const e of document.querySelectorAll('main,article,section,div')){
+     const t=textOf(e),pc=e.querySelectorAll('p').length;
+     if(t.length<500||pc<3)continue;
+     const score=t.length+Math.min(pc,30)*450-noise(t)*1200;
+     if(score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector='';}
+   }
+ }
  if(!best||bestLen<120)return JSON.stringify({ok:false});
- const title=clean((document.querySelector('.chapter-title,.chr-title,#chapter-heading,h1,h2')||{}).innerText||document.title||'');
- const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话節回]/)||[])[1]||'';
+ const titleSelectors=isWebNovel
+   ? ['.chapter-title','.j_chapterName','.chapter-name','.chr-title','#chapter-heading','h1','h2']
+   : ['.chapter-title','.chr-title','#chapter-heading','.j_chapterName','.chapter-name','h1','h2'];
+ let title='';
+ for(const sel of titleSelectors){
+   try{const e=document.querySelector(sel),t=clean(e?.innerText||e?.textContent);if(t&&t.length<180&&!/close chapters|prev|next|download app/i.test(t)){title=t;break;}}catch(_){}
+ }
+ if(!title)title=clean(document.title||'');
+ let body=textOf(best);
+ if(title&&body.toLowerCase().startsWith(title.toLowerCase()))body=body.slice(title.length).trim();
+ const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
+ const selectorFor=e=>{
+   if(!e)return '';
+   if(e.id&&/^[A-Za-z_][A-Za-z0-9_-]*$/.test(e.id))return '#'+e.id;
+   const cls=[...e.classList].filter(x=>/^[A-Za-z_][A-Za-z0-9_-]*$/.test(x)).slice(0,3);
+   return e.tagName.toLowerCase()+(cls.length?'.'+cls.join('.'):'' );
+ };
+ const rememberedSelector=bestSelector||selectorFor(best);
+ window.__nrContentElement=best;
+ window.__nrContentSelector=rememberedSelector;
  const links=[...document.querySelectorAll('a[href],button,[role="button"]')];
  function pick(next){
-   const re=next?/next|next chapter|continue/i:/prev|previous|previous chapter/i;
-   let best=null,score=0;
-   for(const e of links){const meta=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,e.className].join(' ');if(!re.test(meta))continue;const r=e.getBoundingClientRect();if(r.width<2||r.height<2)continue;let s=0;if(/chapter/i.test(meta))s+=3;if(e.tagName==='A')s+=2;if(s>score){score=s;best=e;}}
-   return best?.href||null;
+   const re=next?/next|next chapter|continue|›|»|→/i:/prev|previous|previous chapter|‹|«|←/i;
+   let target=null,score=0;
+   for(const e of links){
+     const meta=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,e.className].join(' ');
+     if(!re.test(meta))continue;
+     const r=e.getBoundingClientRect();if(r.width<2||r.height<2)continue;
+     let s=/chapter/i.test(meta)?4:1;if(e.tagName==='A'&&e.href)s+=2;
+     if(s>score){score=s;target=e;}
+   }
+   return target?.href||null;
  }
- return JSON.stringify({ok:true,url:location.href,title,num,text:textOf(best),next:pick(true),prev:pick(false)});
+ return JSON.stringify({ok:true,url:location.href,title,num,text:body,next:pick(true),prev:pick(false)});
 })()
 """.trimIndent()
-
     fun buildChapter(raw: String): Chapter? = runCatching {
         val o = JSONObject(raw)
         if (!o.optBoolean("ok")) return null
