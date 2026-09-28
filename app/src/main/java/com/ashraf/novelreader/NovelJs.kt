@@ -77,11 +77,22 @@ object NovelJs {
       p.style.margin='0 0 1em 0';
       p.style.lineHeight='1.75';
     }
+    p.style.textAlign='left';
+    p.style.width='100%';
     frag.appendChild(p);
   }
 
   el.innerHTML='';
   el.appendChild(frag);
+
+  // Keep a comfortable reading inset after replacing the original chapter DOM.
+  el.style.boxSizing='border-box';
+  el.style.paddingLeft='16px';
+  el.style.paddingRight='16px';
+  el.style.width='100%';
+  el.style.maxWidth='100%';
+  el.style.textAlign='left';
+
   el.setAttribute('data-novelreaderx-translated','1');
   el.setAttribute('data-nr-original-length',String((window.__nrOriginalHtml||'').length));
   window.__nrTranslatedElement=el;
