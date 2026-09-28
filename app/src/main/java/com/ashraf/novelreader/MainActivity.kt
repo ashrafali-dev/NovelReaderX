@@ -31,6 +31,7 @@ class MainActivity : Activity() {
     private var stableSince=0L
     private var lastObserved=""
     private var viewMode=0 // 0 split, 1 novel, 2 chatbot
+    private var autoSendOnLoad=false
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -119,7 +120,12 @@ class MainActivity : Activity() {
                 lastObserved=""
                 stableSince=0L
                 val token=session
-                handler.postDelayed({fastExtract(0,token,url)},120)
+                if(autoSendOnLoad){
+                    autoSendOnLoad=false
+                    handler.postDelayed({fastExtract(0,token,url)},180)
+                }else{
+                    status("Ready")
+                }
             }
         }
         ai.webViewClient=object:WebViewClient(){
@@ -132,6 +138,7 @@ class MainActivity : Activity() {
     }
 
     private fun instant(){
+        ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
         val token=session
         novel.evaluateJavascript(NovelJs.extract()){raw->
             if(token!=session)return@evaluateJavascript
@@ -231,6 +238,7 @@ class MainActivity : Activity() {
         lastObserved=""
         stableSince=0L
         status("Loading ${if(dir=="next")"next" else "previous"} chapter…")
+        autoSendOnLoad=true
 
         ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
 
@@ -245,15 +253,29 @@ class MainActivity : Activity() {
                 if(result.startsWith("http")){
                     novel.loadUrl(result)
                 }else{
-                    status("WebNovel chapter link not found")
+                    novel.evaluateJavascript(NovelJs.siteNext(dir)){fallbackRaw->
+                        val fallback=fallbackRaw?.unquoteJs().orEmpty()
+                        if(fallback.startsWith("http")){
+                            novel.loadUrl(fallback)
+                        }else if(fallback=="clicked"){
+                        }else{
+                            autoSendOnLoad=false
+                            status("WebNovel chapter link not found")
+                        }
+                    }
                 }
             }
             return
         }
         novel.evaluateJavascript(NovelJs.siteNext(dir)){raw->
             val result=raw?.unquoteJs().orEmpty()
-            if(result.startsWith("http"))novel.loadUrl(result)
-            else handler.postDelayed({fastExtract(0,session,novel.url.orEmpty())},120)
+            if(result.startsWith("http")){
+                novel.loadUrl(result)
+            }else if(result=="clicked"){
+            }else{
+                autoSendOnLoad=false
+                status("Chapter navigation link not found")
+            }
         }
     }
 
