@@ -16,7 +16,7 @@ class SplitLayout(context: Context) : LinearLayout(context) {
     init {
         orientation = VERTICAL
         divider.setBackgroundColor(Color.rgb(70, 70, 78))
-        divider.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(8))
+        divider.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(6))
         divider.setOnTouchListener { _, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -49,11 +49,32 @@ class SplitLayout(context: Context) : LinearLayout(context) {
         addView(bottomView, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
     }
 
-    fun resetHalf() {
+    fun showSplit() {
+        top?.visibility = View.VISIBLE
+        bottom?.visibility = View.VISIBLE
+        divider.visibility = View.VISIBLE
         top?.layoutParams = (top?.layoutParams as? LayoutParams)?.apply { height = 0; weight = 1f }
         bottom?.layoutParams = (bottom?.layoutParams as? LayoutParams)?.apply { height = 0; weight = 1f }
         requestLayout()
     }
+
+    fun showNovelOnly() {
+        top?.visibility = View.VISIBLE
+        bottom?.visibility = View.GONE
+        divider.visibility = View.GONE
+        top?.layoutParams = (top?.layoutParams as? LayoutParams)?.apply { height = 0; weight = 1f }
+        requestLayout()
+    }
+
+    fun showAiOnly() {
+        top?.visibility = View.GONE
+        bottom?.visibility = View.VISIBLE
+        divider.visibility = View.GONE
+        bottom?.layoutParams = (bottom?.layoutParams as? LayoutParams)?.apply { height = 0; weight = 1f }
+        requestLayout()
+    }
+
+    fun resetHalf() = showSplit()
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 }
