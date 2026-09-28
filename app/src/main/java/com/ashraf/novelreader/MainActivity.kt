@@ -127,9 +127,9 @@ class MainActivity : Activity() {
             gravity=Gravity.CENTER_VERTICAL
             layoutParams=FrameLayout.LayoutParams(-2,-1,Gravity.END or Gravity.CENTER_VERTICAL)
         }
+        right.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
         right.addView(iconBtn("G","ChatGPT"){switchProvider(AiProvider.CHATGPT)})
         right.addView(iconBtn("✦","Gemini"){switchProvider(AiProvider.GEMINI)})
-        right.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
         // Left: view controls. Right: menu.
         bottom.addView(right)
         bottom.addView(more)
