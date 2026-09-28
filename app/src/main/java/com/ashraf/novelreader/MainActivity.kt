@@ -119,8 +119,8 @@ class MainActivity : Activity() {
             layoutParams=LinearLayout.LayoutParams(dp(52),dp(42)).apply{setMargins(dp(4),0,dp(4),0)}
             textSize=23f
         }
-        center.addView(pulseButton)
-        center.addView(nextButton)
+        center.addView(pulseButton!!)
+        center.addView(nextButton!!)
 
         val right=LinearLayout(this).apply{
             orientation=LinearLayout.HORIZONTAL
@@ -510,7 +510,7 @@ class MainActivity : Activity() {
     private fun dp(v:Int)= (v*resources.displayMetrics.density).toInt()
 
     override fun onPause(){CookieStore.flush();super.onPause()}
-    override fun onDestroy(){aiJob++;session++;novel.destroy();ai.destroy();super.onDestroy()}
+    override fun onDestroy(){handler.removeCallbacks(pulse);aiJob++;session++;novel.destroy();ai.destroy();super.onDestroy()}
 }
 
 object JSONObjectCompat {
