@@ -5,93 +5,118 @@ import org.json.JSONObject
 
 object ProviderScripts {
     fun hostMatches(provider: AiProvider, url: String): Boolean = runCatching {
-        val h=Uri.parse(url).host?.lowercase() ?: return false
-        h==provider.host || h.endsWith(".${provider.host}")
+        val h = Uri.parse(url).host?.lowercase() ?: return false
+        h == provider.host || h.endsWith(".${provider.host}")
     }.getOrDefault(false)
 
     fun inputAndSend(provider: AiProvider, text: String): String {
-        val q=JSONObject.quote(text)
-        return when(provider){
-            AiProvider.CHATGPT -> robust(q, "chatgpt")
-            AiProvider.GEMINI -> robust(q, "gemini")
-            AiProvider.DEEPSEEK -> robust(q, "other")
-            AiProvider.CLAUDE -> robust(q, "other")
-            AiProvider.GROK -> robust(q, "grok")
+        val q = JSONObject.quote(text)
+        val selector = when (provider) {
+            AiProvider.CHATGPT -> "#prompt-textarea + button,button[data-testid='send-button'],button[aria-label*='Send' i],button[type='submit']"
+            AiProvider.GEMINI -> "button[aria-label*='Send' i],button.send-button,button[mattooltip*='Send' i]"
+            AiProvider.GROK -> "button[type='submit'],button[aria-label*='Submit' i],button[aria-label*='Send' i]"
+            else -> "button[aria-label*='Send' i],button[data-testid*='send' i],button[type='submit']"
         }
-    }
-
-    private fun robust(q:String, site:String):String = """
+        return """
 (function(){
  const text=$q;
- const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2&&getComputedStyle(e).visibility!=='hidden'&&getComputedStyle(e).display!=='none'};
- const boxes=[...document.querySelectorAll('#prompt-textarea,textarea,input,div[contenteditable="true"],div[contenteditable="plaintext-only"],[role="textbox"]')].filter(vis);
- boxes.sort((a,b)=>b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom);
- const box=boxes[0];
+ const sendSelector=${JSONObject.quote(selector)};
+ const visible=function(e){
+   if(!e)return false;
+   var r=e.getBoundingClientRect(),s=getComputedStyle(e);
+   return r.width>2&&r.height>2&&s.display!=='none'&&s.visibility!=='hidden';
+ };
+ var boxes=[].slice.call(document.querySelectorAll('#prompt-textarea,textarea,input,div[contenteditable="true"],div[contenteditable="plaintext-only"],[role="textbox"]')).filter(visible);
+ boxes.sort(function(a,b){return b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom});
+ var box=boxes[0];
  if(!box)return 'nobox';
- const clear=()=>{
+ function clearBox(){
    box.focus();
    try{
      if(box.matches('textarea,input')){
-       const proto=box.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-       Object.getOwnPropertyDescriptor(proto,'value').set.call(box,'');
+       var p=box.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+       Object.getOwnPropertyDescriptor(p,'value').set.call(box,'');
      }else{
-       const sel=window.getSelection(),range=document.createRange();
+       var sel=window.getSelection(),range=document.createRange();
        range.selectNodeContents(box);sel.removeAllRanges();sel.addRange(range);
        document.execCommand('delete',false,null);box.innerHTML='';
      }
-   }catch(e){try{box.value='';box.textContent=''}catch(_){}}
+   }catch(e){}
    box.dispatchEvent(new Event('input',{bubbles:true}));
    box.dispatchEvent(new Event('change',{bubbles:true}));
- };
- clear(); box.focus();
+ }
+ clearBox(); box.focus();
  if(box.matches('textarea,input')){
-   const proto=box.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
-   Object.getOwnPropertyDescriptor(proto,'value').set.call(box,text);
+   var p=box.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+   Object.getOwnPropertyDescriptor(p,'value').set.call(box,text);
  }else{
-   const sel=window.getSelection(),range=document.createRange();
+   var sel=window.getSelection(),range=document.createRange();
    range.selectNodeContents(box);sel.removeAllRanges();sel.addRange(range);
    document.execCommand('insertText',false,text);
    if(!(box.innerText||'').trim())box.textContent=text;
-   try{box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}catch(_){}
  }
  box.dispatchEvent(new Event('input',{bubbles:true}));
  box.dispatchEvent(new Event('change',{bubbles:true}));
- setTimeout(()=>{
-   let btn=null;
-   const sendSelectors=site==='chatgpt'?"#prompt-textarea + button,button[data-testid=\"send-button\"],button[aria-label*=\"Send\" i],button[type=\"submit\"]":site==='gemini'?"button[aria-label*=\"Send\" i],button.send-button,button[mattooltip*=\"Send\" i]":site==='grok'?"button[type=\"submit\"],button[aria-label*=\"Submit\" i],button[aria-label*=\"Send\" i]":"button[aria-label*=\"Send\" i],button[data-testid*=\"send\" i],button[type=\"submit\"]";
-   try{btn=[...document.querySelectorAll(sendSelectors)].find(x=>vis(x)&&!x.disabled&&x.getAttribute('aria-disabled')!=='true')}catch(_){}
+ setTimeout(function(){
+   var btn=null;
+   try{btn=[].slice.call(document.querySelectorAll(sendSelector)).find(function(x){return visible(x)&&!x.disabled&&x.getAttribute('aria-disabled')!=='true';});}catch(e){}
    if(btn)btn.click();
    else{
      box.focus();
      box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
      box.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
    }
-   setTimeout(()=>{const cur=box.matches('textarea,input')?box.value:(box.innerText||'');if(cur.trim()===text.trim())clear()},1200);
+   setTimeout(function(){
+     var cur=box.matches('textarea,input')?box.value:(box.innerText||'');
+     if(cur.trim()===text.trim())clearBox();
+   },1200);
  },150);
  return 'sent';
 })()
 """.trimIndent()
     }
-    fun clearComposerScript(): String = """
-(()=>{const boxes=[...document.querySelectorAll('#prompt-textarea,textarea,input,div[contenteditable="true"],[role="textbox"]')];boxes.forEach(b=>{try{b.focus();if(b.matches('textarea,input')){const p=Object.getOwnPropertyDescriptor(b.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value');p.set.call(b,'')}else{document.execCommand('selectAll');document.execCommand('delete');b.innerHTML='';}b.dispatchEvent(new Event('input',{bubbles:true}));b.dispatchEvent(new Event('change',{bubbles:true}));}catch(_){}});return 'cleared'})()
-""".trimIndent()
 
-    fun responseTextScript(provider: AiProvider): String = """
-(()=>{
- const sels={
-  CHATGPT:'[data-message-author-role="assistant"],[data-message-role="assistant"],article[data-turn="assistant"],.markdown',
-  GEMINI:'model-response,.model-response-text,message-content,.markdown',
-  DEEPSEEK:'.ds-markdown',
-  CLAUDE:'.font-claude-message,[data-testid="assistant-message"],.prose',
-  GROK:'[class*="message-bubble"],[class*="response-content-markdown"],.markdown'
- };
- const q=sels['${provider.name}']||'[data-message-author-role="assistant"],.markdown,.prose';
- const a=[...document.querySelectorAll(q)].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&(e.innerText||e.textContent||'').trim().length>0});
- if(!a.length)return '';
- let e=a[a.length-1];
- const inner=e.querySelector&&e.querySelector('.markdown,.prose,[class*="markdown"]');
- return (inner||e).innerText?.trim()||'';
+    fun clearComposerScript(): String = """
+(function(){
+ var boxes=[].slice.call(document.querySelectorAll('#prompt-textarea,textarea,input,div[contenteditable="true"],[role="textbox"]'));
+ boxes.forEach(function(b){
+   try{
+     b.focus();
+     if(b.matches('textarea,input')){
+       var p=b.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+       Object.getOwnPropertyDescriptor(p,'value').set.call(b,'');
+     }else{
+       var s=window.getSelection(),r=document.createRange();
+       r.selectNodeContents(b);s.removeAllRanges();s.addRange(r);
+       document.execCommand('delete',false,null);b.innerHTML='';
+     }
+     b.dispatchEvent(new Event('input',{bubbles:true}));
+     b.dispatchEvent(new Event('change',{bubbles:true}));
+   }catch(e){}
+ });
+ return 'cleared';
 })()
 """.trimIndent()
 
+    fun responseTextScript(provider: AiProvider): String {
+        val selector = when (provider) {
+            AiProvider.CHATGPT -> "[data-message-author-role='assistant'],[data-message-role='assistant'],article[data-turn='assistant'],.markdown"
+            AiProvider.GEMINI -> "model-response,.model-response-text,message-content,.markdown"
+            AiProvider.DEEPSEEK -> ".ds-markdown"
+            AiProvider.CLAUDE -> ".font-claude-message,[data-testid='assistant-message'],.prose"
+            AiProvider.GROK -> "[class*='message-bubble'],[class*='response-content-markdown'],.markdown"
+        }
+        return """
+(function(){
+ var a=[].slice.call(document.querySelectorAll(${JSONObject.quote(selector)})).filter(function(e){
+   var r=e.getBoundingClientRect();
+   return r.width>0&&r.height>0&&(e.innerText||e.textContent||'').trim().length>0;
+ });
+ if(!a.length)return '';
+ var e=a[a.length-1];
+ var inner=e.querySelector?e.querySelector('.markdown,.prose,[class*="markdown"]'):null;
+ return (inner||e).innerText.trim();
+})()
+""".trimIndent()
+    }
 }
