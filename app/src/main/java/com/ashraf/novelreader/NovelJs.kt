@@ -11,8 +11,12 @@ object NovelJs {
 (function(){
   const text=$q;
   const clean=s=>(s||'').replace(/\u00a0/g,' ').trim();
-  const old=document.getElementById('nr-translation');
-  if(old) old.remove();
+
+  let el=window.__nrContentElement;
+  if(!el || !document.contains(el)){
+    const remembered=window.__nrContentSelector;
+    if(remembered){try{el=document.querySelector(remembered)}catch(_){}}
+  }
 
   const selectors=[
     '#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c',
@@ -21,47 +25,66 @@ object NovelJs {
     '#article','.article-content','.content','article'
   ];
 
-  let el=null,best=0;
-  for(const sel of selectors){
-    try{
-      for(const e of document.querySelectorAll(sel)){
-        const n=clean(e.innerText||e.textContent).length;
-        if(n>best&&n>500){best=n;el=e;}
-      }
-    }catch(_){}
-  }
   if(!el){
-    for(const e of document.querySelectorAll('main,article,section,div')){
-      const n=clean(e.innerText||e.textContent).length;
-      if(n>best&&n>500&&e.querySelectorAll('p').length>=3){best=n;el=e;}
+    let best=null,bestScore=0;
+    for(const sel of selectors){
+      try{
+        for(const e of document.querySelectorAll(sel)){
+          const t=clean(e.innerText||e.textContent);
+          if(t.length<300)continue;
+          const ps=[...e.querySelectorAll('p')].filter(p=>clean(p.innerText||p.textContent).length>0);
+          const score=t.length+ps.length*500;
+          if(score>bestScore){bestScore=score;best=e;}
+        }
+      }catch(_){}
     }
+    el=best;
   }
   if(!el)return 'not-found';
 
-  // Keep the site's actual chapter element and all of its outer attributes.
-  // Only replace its readable children, matching the old NovelStudio behavior.
-  const parts=text.replace(/\r/g,'').split(/\n\s*\n+/).map(x=>x.trim()).filter(Boolean);
-  const frag=document.createDocumentFragment();
-  for(const part of parts){
-    const p=document.createElement('p');
-    p.textContent=part;
-    p.style.margin='0 0 1em 0';
-    p.style.lineHeight='1.75';
-    frag.appendChild(p);
-  }
-
-  if(!window.__nrOriginalHtml || window.__nrOriginalElement!==el){
+  if(el.getAttribute('data-novelreaderx-translated')!=='1' ||
+     window.__nrOriginalElement!==el ||
+     !window.__nrOriginalHtml){
     window.__nrOriginalHtml=el.innerHTML;
     window.__nrOriginalElement=el;
   }
+
+  const normalized=text.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim();
+  const parts=normalized
+    .split(/\n\s*\n+/)
+    .map(x=>x.trim())
+    .filter(Boolean);
+
+  const finalParts=[];
+  for(const part of parts){
+    const lines=part.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    if(lines.length>1 && lines.every(x=>x.length>1)) finalParts.push(...lines);
+    else finalParts.push(part);
+  }
+
+  const oldParagraph=el.querySelector('p');
+  const frag=document.createDocumentFragment();
+  for(const part of finalParts){
+    const p=document.createElement('p');
+    p.textContent=part;
+    if(oldParagraph){
+      const cs=getComputedStyle(oldParagraph);
+      if(cs.marginTop)p.style.marginTop=cs.marginTop;
+      if(cs.marginBottom)p.style.marginBottom=cs.marginBottom;
+      if(cs.lineHeight)p.style.lineHeight=cs.lineHeight;
+      if(cs.fontSize)p.style.fontSize=cs.fontSize;
+    }else{
+      p.style.margin='0 0 1em 0';
+      p.style.lineHeight='1.75';
+    }
+    frag.appendChild(p);
+  }
+
   el.innerHTML='';
   el.appendChild(frag);
   el.setAttribute('data-novelreaderx-translated','1');
-  el.setAttribute('data-nr-original-length',String(best));
+  el.setAttribute('data-nr-original-length',String((window.__nrOriginalHtml||'').length));
   window.__nrTranslatedElement=el;
-
-  // Do not inject a separate floating translation box; the translation now
-  // occupies the same WebNovel chapter-content element.
   el.scrollIntoView({behavior:'smooth',block:'start'});
   return 'inserted';
 })()
