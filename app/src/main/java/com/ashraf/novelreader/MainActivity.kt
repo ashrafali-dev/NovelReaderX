@@ -91,17 +91,26 @@ class MainActivity : Activity() {
 
     private fun instant(){
         val token=session
-        novel.evaluateJavascript(NovelJs.extract()){raw->{if(token!=session)return@evaluateJavascript;val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs() ?: "");if(ch!=null) handleChapter(ch, true) else status("Chapter text not found")}}
+        novel.evaluateJavascript(NovelJs.extract()){raw ->
+            if(token==session){
+                val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs() ?: "")
+                if(ch!=null) handleChapter(ch, true) else status("Chapter text not found")
+            }
+        }
     }
 
     private fun fastExtract(attempt:Int,token:Long,url:String){
         if(token!=session)return
-        novel.evaluateJavascript(NovelJs.extract()){raw->{
-            if(token!=session)return@evaluateJavascript
-            val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs() ?: "")
-            if(ch!=null){handleChapter(ch,true);return@evaluateJavascript}
-            if(attempt<24)handler.postDelayed({fastExtract(attempt+1,token,url)},80)
-        }}
+        novel.evaluateJavascript(NovelJs.extract()){raw ->
+            if(token==session){
+                val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs() ?: "")
+                if(ch!=null) {
+                    handleChapter(ch,true)
+                } else if(attempt<24) {
+                    handler.postDelayed({fastExtract(attempt+1,token,url)},80)
+                }
+            }
+        }
     }
 
     private fun handleChapter(ch:Chapter,auto:Boolean){
@@ -121,30 +130,50 @@ class MainActivity : Activity() {
         val targetProvider=provider
         // Snapshot the current answer BEFORE sending. This prevents an old answer
         // from being mistaken for the new chapter's answer.
-        ai.evaluateJavascript(ProviderScripts.responseTextScript(targetProvider)){beforeRaw->
-            if(request!=aiJob)return@evaluateJavascript
-            baselineResponse=beforeRaw?.unquoteJs()?.trim().orEmpty()
-            baselineHash=hash(baselineResponse)
-            ai.evaluateJavascript(ProviderScripts.inputAndSend(targetProvider,prompt)){res->
-                if(request!=aiJob)return@evaluateJavascript
-                if(res?.contains("nobox") == true){status("${targetProvider.label}: input box not found");return@evaluateJavascript}
-                status("✓ Sent • waiting for ${targetProvider.label}…")
-                pollResponse(request,session,ch,0,targetProvider)
+        ai.evaluateJavascript(ProviderScripts.responseTextScript(targetProvider)){beforeRaw ->
+            if(request==aiJob){
+                baselineResponse=beforeRaw?.unquoteJs()?.trim().orEmpty()
+                baselineHash=hash(baselineResponse)
+                ai.evaluateJavascript(ProviderScripts.inputAndSend(targetProvider,prompt)){res ->
+                    if(request==aiJob){
+                        if(res?.contains("nobox") == true) {
+                            status("${targetProvider.label}: input box not found")
+                        } else {
+                            status("✓ Sent • waiting for ${targetProvider.label}…")
+                            pollResponse(request,session,ch,0,targetProvider)
+                        }
+                    }
+                }
             }
         }
     }
 
     private fun pollResponse(request:Long,token:Long,ch:Chapter,attempt:Int,p:AiProvider){
         if(request!=aiJob||token!=session)return
-        ai.evaluateJavascript(ProviderScripts.responseTextScript(p)){raw->{
-            if(request!=aiJob||token!=session)return@evaluateJavascript
-            val text=raw?.unquoteJs()?.trim().orEmpty()
-            val h=hash(text)
-            val changed=text.isNotEmpty() && h!=baselineHash && text!=baselineResponse
-            if(changed){if(text==lastObserved){if(stableSince==0L)stableSince=System.currentTimeMillis();if(System.currentTimeMillis()-stableSince>=500){insertResult(ch,text);return@evaluateJavascript}}else{lastObserved=text;stableSince=System.currentTimeMillis()}}
-            if(attempt<480)handler.postDelayed({pollResponse(request,token,ch,attempt+1,p)},250)
-            else status("Timed out waiting for ${p.label}")
-        }}
+        ai.evaluateJavascript(ProviderScripts.responseTextScript(p)){raw ->
+            if(request==aiJob && token==session){
+                val text=raw?.unquoteJs()?.trim().orEmpty()
+                val h=hash(text)
+                val changed=text.isNotEmpty() && h!=baselineHash && text!=baselineResponse
+                var inserted=false
+                if(changed){
+                    if(text==lastObserved){
+                        if(stableSince==0L)stableSince=System.currentTimeMillis()
+                        if(System.currentTimeMillis()-stableSince>=500){
+                            insertResult(ch,text)
+                            inserted=true
+                        }
+                    } else {
+                        lastObserved=text
+                        stableSince=System.currentTimeMillis()
+                    }
+                }
+                if(!inserted){
+                    if(attempt<480)handler.postDelayed({pollResponse(request,token,ch,attempt+1,p)},250)
+                    else status("Timed out waiting for ${p.label}")
+                }
+            }
+        }
     }
 
     private fun insertResult(ch:Chapter,text:String){
@@ -162,21 +191,21 @@ class MainActivity : Activity() {
         baselineResponse="";baselineHash="";lastObserved="";stableSince=0L
         status("Loading ${if(dir=="next")"next" else "previous"} chapter…")
         ai.evaluateJavascript("document.querySelectorAll('textarea,[contenteditable=\"true\"],[role=\"textbox\"]').forEach(e=>{try{e.value=''}catch(x){};try{e.textContent=''}catch(x){}});'ok'",null)
-        if(old==null){fastExtract(0,session,novel.url);return}
+        if(old==null){fastExtract(0,session,novel.url.orEmpty());return}
         val target=if(dir=="next")old.nextUrl else old.prevUrl
         if(!target.isNullOrBlank()){novel.loadUrl(target);return}
         if(WebNovelAdapter.isWebNovel(old.url)){
             // The catalog is fetched inside the current WebView with its own cookies.
             novel.evaluateJavascript(WebNovelAdapter.navigateFromCatalogScript(dir,old.title)){r->
                 if(r?.contains("error") == true) status("WebNovel catalog error")
-                handler.postDelayed({fastExtract(0,session,novel.url)},120)
+                handler.postDelayed({fastExtract(0,session,novel.url.orEmpty())},120)
             }
             return
         }
         novel.evaluateJavascript(NovelJs.siteNext(dir)){raw->{
             val result=raw?.unquoteJs().orEmpty()
             if(result.startsWith("http"))novel.loadUrl(result)
-            else handler.postDelayed({fastExtract(0,session,novel.url)},150)
+            else handler.postDelayed({fastExtract(0,session,novel.url.orEmpty())},150)
         }}
     }
 
