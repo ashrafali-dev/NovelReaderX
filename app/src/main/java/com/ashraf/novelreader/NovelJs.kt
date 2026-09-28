@@ -50,6 +50,10 @@ object NovelJs {
     frag.appendChild(p);
   }
 
+  if(!window.__nrOriginalHtml || window.__nrOriginalElement!==el){
+    window.__nrOriginalHtml=el.innerHTML;
+    window.__nrOriginalElement=el;
+  }
   el.innerHTML='';
   el.appendChild(frag);
   el.setAttribute('data-novelreaderx-translated','1');
@@ -64,6 +68,12 @@ object NovelJs {
 """.trimIndent()
     }
 
+
+    fun restoreOriginal():String = """
+(()=>{const e=window.__nrOriginalElement,h=window.__nrOriginalHtml;
+if(!e||!h||!document.contains(e))return 'none';
+e.innerHTML=h;e.removeAttribute('data-novelreaderx-translated');return 'restored';})()
+""".trimIndent()
 
     fun siteNext(dir:String)= """
 (()=>{const next=${dir=="next"};const els=[...document.querySelectorAll('a[href],button,[role="button"],mov-button')];const re=next?/next|next chapter|continue/i:/prev|previous|previous chapter/i;let best=null,score=0;for(const e of els){const s=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,e.className].join(' ');if(!re.test(s))continue;const r=e.getBoundingClientRect();if(r.width<2||r.height<2)continue;let n=/chapter/i.test(s)?4:1;if(e.tagName==='A'&&e.href)n+=2;if(n>score){score=n;best=e}}if(!best)return '';if(best.href)return best.href;best.click();return 'clicked'})()
