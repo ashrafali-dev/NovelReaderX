@@ -4,7 +4,7 @@ import android.webkit.WebView
 import org.json.JSONObject
 
 object WebNovelAdapter {
-    fun isWebNovel(url: String) = runCatching { android.net.Uri.parse(url).host?.lowercase()?.endsWith("webnovel.com") == true }.getOrDefault(false)
+    fun isWebNovel(url: String) = SiteProfiles.forUrl(url).navigationMode == NavigationMode.WEBNOVEL_CATALOG
 
     /** Fast DOM extraction. It does not wait for a timer: it reads the live reader DOM immediately. */
     fun extractScript(): String = """
