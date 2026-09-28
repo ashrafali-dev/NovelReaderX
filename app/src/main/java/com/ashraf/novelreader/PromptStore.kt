@@ -8,7 +8,7 @@ class PromptStore(context: Context) {
     fun save(value: String) { prefs.edit().putString("prompt", value).apply() }
 
     companion object {
-        const val DEFAULT = """
+        val DEFAULT = """
 You are a professional literary translator.
 Translate only the chapter text below into natural, fluent Bengali.
 Preserve names, terminology, tone, dialogue, paragraph structure, emotions, and pacing.
