@@ -108,7 +108,7 @@ object ProviderScripts {
         }
         return """
 (function(){
- var a=[].slice.call(document.querySelectorAll(${JSONObject.quote(selector)})).filter(function(e){
+ var a=[].slice.call(document.querySelectorAll(\${JSONObject.quote(selector)})).filter(function(e){
    var r=e.getBoundingClientRect();
    return r.width>0&&r.height>0&&(e.innerText||e.textContent||'').trim().length>0;
  });
