@@ -12,47 +12,86 @@ object ProviderScripts {
     fun inputAndSend(provider: AiProvider, text: String): String {
         val q=JSONObject.quote(text)
         return when(provider){
-            AiProvider.GEMINI -> gemini(q)
-            AiProvider.CHATGPT -> chatgpt(q)
-            AiProvider.DEEPSEEK -> generic(q, listOf("textarea","[contenteditable=\"true\"]","[role=\"textbox\"]"), listOf("button[aria-label*='Send' i]","button[data-testid*='send' i]"))
-            AiProvider.CLAUDE -> generic(q, listOf("[contenteditable=\"true\"]","textarea","[role=\"textbox\"]"), listOf("button[aria-label*='Send' i]","button[type='submit']"))
-            AiProvider.GROK -> generic(q, listOf("textarea","[contenteditable=\"true\"]","[role=\"textbox\"]"), listOf("button[aria-label*='Send' i]","button[type='submit']"))
+            AiProvider.CHATGPT -> robust(q, "chatgpt")
+            AiProvider.GEMINI -> robust(q, "gemini")
+            AiProvider.DEEPSEEK -> robust(q, "other")
+            AiProvider.CLAUDE -> robust(q, "other")
+            AiProvider.GROK -> robust(q, "grok")
         }
     }
 
-    private fun generic(q:String, inputs:List<String>, sends:List<String>) = """
+    private fun robust(q:String, site:String):String = """
 (function(){
  const text=$q;
- const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2};
- let box=null; for(const s of ${JSONObject.quote(inputs.joinToString("__SEP__"))}.split('__SEP__')){try{box=[...document.querySelectorAll(s)].find(vis);if(box)break}catch(e){}}
+ const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2&&getComputedStyle(e).visibility!=='hidden'&&getComputedStyle(e).display!=='none'};
+ const boxes=[...document.querySelectorAll('#prompt-textarea,textarea,input,div[contenteditable="true"],div[contenteditable="plaintext-only"],[role="textbox"]')].filter(vis);
+ boxes.sort((a,b)=>b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom);
+ const box=boxes[0];
  if(!box)return 'nobox';
- const clear=()=>{box.focus();if(box.matches('textarea,input')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')||Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');try{p.set.call(box,'')}catch(e){box.value=''}}else{document.execCommand('selectAll');document.execCommand('delete');box.innerHTML='';}box.dispatchEvent(new Event('input',{bubbles:true}));};
- clear();
- if(box.matches('textarea,input')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value')||Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');try{p.set.call(box,text)}catch(e){box.value=text}}
- else{box.focus();document.execCommand('insertText',false,text);if(!(box.innerText||'').trim())box.textContent=text}
- box.dispatchEvent(new Event('input',{bubbles:true}));box.dispatchEvent(new Event('change',{bubbles:true}));
- setTimeout(()=>{let b=null;for(const s of ${JSONObject.quote(sends.joinToString("__SEP__"))}.split('__SEP__')){try{b=[...document.querySelectorAll(s)].find(x=>vis(x)&&!x.disabled&&x.getAttribute('aria-disabled')!=='true');if(b)break}catch(e){}}if(b)b.click();else box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));setTimeout(()=>{const cur=box.matches('textarea,input')?box.value:(box.innerText||'');if(cur.trim()===text.trim())clear();},900);},20);
+ const clear=()=>{
+   box.focus();
+   try{
+     if(box.matches('textarea,input')){
+       const proto=box.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+       Object.getOwnPropertyDescriptor(proto,'value').set.call(box,'');
+     }else{
+       const sel=window.getSelection(),range=document.createRange();
+       range.selectNodeContents(box);sel.removeAllRanges();sel.addRange(range);
+       document.execCommand('delete',false,null);box.innerHTML='';
+     }
+   }catch(e){try{box.value='';box.textContent=''}catch(_){}}
+   box.dispatchEvent(new Event('input',{bubbles:true}));
+   box.dispatchEvent(new Event('change',{bubbles:true}));
+ };
+ clear(); box.focus();
+ if(box.matches('textarea,input')){
+   const proto=box.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;
+   Object.getOwnPropertyDescriptor(proto,'value').set.call(box,text);
+ }else{
+   const sel=window.getSelection(),range=document.createRange();
+   range.selectNodeContents(box);sel.removeAllRanges();sel.addRange(range);
+   document.execCommand('insertText',false,text);
+   if(!(box.innerText||'').trim())box.textContent=text;
+   try{box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}))}catch(_){}
+ }
+ box.dispatchEvent(new Event('input',{bubbles:true}));
+ box.dispatchEvent(new Event('change',{bubbles:true}));
+ setTimeout(()=>{
+   let btn=null;
+   const sendSelectors=site==='chatgpt'?"#prompt-textarea + button,button[data-testid=\"send-button\"],button[aria-label*=\"Send\" i],button[type=\"submit\"]":site==='gemini'?"button[aria-label*=\"Send\" i],button.send-button,button[mattooltip*=\"Send\" i]":site==='grok'?"button[type=\"submit\"],button[aria-label*=\"Submit\" i],button[aria-label*=\"Send\" i]":"button[aria-label*=\"Send\" i],button[data-testid*=\"send\" i],button[type=\"submit\"]";
+   try{btn=[...document.querySelectorAll(sendSelectors)].find(x=>vis(x)&&!x.disabled&&x.getAttribute('aria-disabled')!=='true')}catch(_){}
+   if(btn)btn.click();
+   else{
+     box.focus();
+     box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+     box.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+   }
+   setTimeout(()=>{const cur=box.matches('textarea,input')?box.value:(box.innerText||'');if(cur.trim()===text.trim())clear()},1200);
+ },150);
  return 'sent';
 })()
 """.trimIndent()
-
-    private fun chatgpt(q:String) = """
-(function(){const text=$q;const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2};let b=[...document.querySelectorAll('#prompt-textarea,textarea,[contenteditable=\"true\"],[role=\"textbox\"]')].find(vis);if(!b)return 'nobox';const clear=()=>{b.focus();if(b.matches('textarea')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value');p.set.call(b,'')}else{document.execCommand('selectAll');document.execCommand('delete');b.innerHTML='';}b.dispatchEvent(new Event('input',{bubbles:true}));};clear();b.focus();if(b.matches('textarea')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value');p.set.call(b,text)}else{document.execCommand('insertText',false,text);if(!(b.innerText||'').trim())b.textContent=text}b.dispatchEvent(new Event('input',{bubbles:true}));b.dispatchEvent(new Event('change',{bubbles:true}));setTimeout(()=>{let s=[...document.querySelectorAll('button')].find(x=>vis(x)&&!x.disabled&&(x.getAttribute('aria-label')||'').match(/send/i));if(s)s.click();else b.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));setTimeout(()=>{const cur=b.matches('textarea')?b.value:(b.innerText||'');if(cur.trim()===text.trim())clear()},900)},10);return 'sent'})()
-""".trimIndent()
-
-    private fun gemini(q:String) = """
-(function(){const text=$q;const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2};let b=[...document.querySelectorAll('rich-textarea .ql-editor,rich-textarea [contenteditable=\"true\"],div.ql-editor[contenteditable=\"true\"],[aria-label="Enter a prompt here"],[contenteditable=\"true\"][role=\"textbox\"],textarea,[role=\"textbox\"]')].find(vis);if(!b)return 'nobox';const clear=()=>{b.focus();if(b.matches('textarea')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value');p.set.call(b,'')}else{document.execCommand('selectAll');document.execCommand('delete');b.innerHTML='';}b.dispatchEvent(new Event('input',{bubbles:true}));};clear();b.focus();if(b.matches('textarea')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value');p.set.call(b,text)}else{document.execCommand('insertText',false,text);if(!(b.innerText||b.textContent||'').trim())b.textContent=text}b.dispatchEvent(new Event('input',{bubbles:true}));b.dispatchEvent(new Event('change',{bubbles:true}));setTimeout(()=>{let s=[...document.querySelectorAll('button')].find(x=>vis(x)&&!x.disabled&&(x.getAttribute('aria-label')||'').match(/send|submit/i));if(s)s.click();else b.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));setTimeout(()=>{const cur=b.matches('textarea')?b.value:(b.innerText||'');if(cur.trim()===text.trim())clear()},900)},10);return 'sent'})()
-""".trimIndent()
-
-    fun clearComposerScript(): String = """
-(()=>{document.querySelectorAll('textarea,input,[contenteditable="true"],[role="textbox"]').forEach(e=>{try{e.focus();if(e.matches('textarea,input')){const proto=e.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;const p=Object.getOwnPropertyDescriptor(proto,'value');if(p)p.set.call(e,'');else e.value='';}else{document.execCommand('selectAll');document.execCommand('delete');e.innerHTML='';e.textContent='';}e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));}catch(_){}});return 'cleared'})()
-""".trimIndent()
-
-    fun responseTextScript(provider: AiProvider): String = when(provider) {
-        AiProvider.GEMINI -> """(()=>{const a=[...document.querySelectorAll('model-response,message-content,.model-response-text,.response-content')];return (a.at(-1)?.innerText||'').trim()})()"""
-        AiProvider.CHATGPT -> """(()=>{const a=[...document.querySelectorAll('[data-message-author-role="assistant"],div.markdown')];return (a.at(-1)?.innerText||'').trim()})()"""
-        AiProvider.DEEPSEEK -> """(()=>{const a=[...document.querySelectorAll('.ds-markdown,.markdown,div[class*="markdown"]')];return (a.at(-1)?.innerText||'').trim()})()"""
-        AiProvider.CLAUDE -> """(()=>{const a=[...document.querySelectorAll('[data-is-streaming],.font-claude-message,.prose')];return (a.at(-1)?.innerText||'').trim()})()"""
-        AiProvider.GROK -> """(()=>{const a=[...document.querySelectorAll('[data-testid*="message"],.message-bubble,.markdown')];return (a.at(-1)?.innerText||'').trim()})()"""
     }
+    fun clearComposerScript(): String = """
+(()=>{const boxes=[...document.querySelectorAll('#prompt-textarea,textarea,input,div[contenteditable="true"],[role="textbox"]')];boxes.forEach(b=>{try{b.focus();if(b.matches('textarea,input')){const p=Object.getOwnPropertyDescriptor(b.matches('textarea')?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value');p.set.call(b,'')}else{document.execCommand('selectAll');document.execCommand('delete');b.innerHTML='';}b.dispatchEvent(new Event('input',{bubbles:true}));b.dispatchEvent(new Event('change',{bubbles:true}));}catch(_){}});return 'cleared'})()
+""".trimIndent()
+
+    fun responseTextScript(provider: AiProvider): String = """
+(()=>{
+ const sels={
+  CHATGPT:'[data-message-author-role="assistant"],[data-message-role="assistant"],article[data-turn="assistant"],.markdown',
+  GEMINI:'model-response,.model-response-text,message-content,.markdown',
+  DEEPSEEK:'.ds-markdown',
+  CLAUDE:'.font-claude-message,[data-testid="assistant-message"],.prose',
+  GROK:'[class*="message-bubble"],[class*="response-content-markdown"],.markdown'
+ };
+ const q=sels['\${provider.name}']||'[data-message-author-role="assistant"],.markdown,.prose';
+ const a=[...document.querySelectorAll(q)].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&(e.innerText||e.textContent||'').trim().length>0});
+ if(!a.length)return '';
+ let e=a[a.length-1];
+ const inner=e.querySelector&&e.querySelector('.markdown,.prose,[class*="markdown"]');
+ return (inner||e).innerText?.trim()||'';
+})()
+""".trimIndent()
+
 }
