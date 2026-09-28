@@ -177,52 +177,91 @@ class MainActivity : Activity() {
 
     private fun sendChapter(ch:Chapter){
         val request=++aiJob
-        stableSince=0L
-        lastObserved=""
-        val prompt=promptStore.get().replace("{{CHAPTER}}",ch.text)
         val targetProvider=provider
-        status("Sending ${ch.number.ifBlank{"chapter"}} → ${targetProvider.label}…")
-        ai.evaluateJavascript(ProviderScripts.responseTextScript(targetProvider)){beforeRaw->
-            if(request!=aiJob)return@evaluateJavascript
-            baselineResponse=beforeRaw?.unquoteJs()?.trim().orEmpty()
-            baselineHash=hash(baselineResponse)
-            ai.evaluateJavascript(ProviderScripts.inputAndSend(targetProvider,prompt)){res->
-                if(request!=aiJob)return@evaluateJavascript
-                if(res?.contains("nobox")==true){
-                    status("${targetProvider.label}: input box not found")
-                }else{
-                    status("✓ Sent • waiting for ${targetProvider.label}…")
-                    pollResponse(request,session,ch,0,targetProvider)
+        val prompt=promptStore.get().replace("{{CHAPTER}}",ch.text)
+        status("Waiting for ${targetProvider.label}…")
+        waitAiIdle(request,session,ch,targetProvider,0,prompt)
+    }
+
+    private fun waitAiIdle(request:Long,token:Long,ch:Chapter,p:AiProvider,attempt:Int,prompt:String){
+        if(request!=aiJob||token!=session)return
+        ai.evaluateJavascript(ProviderScripts.readLen()){raw->
+            if(request!=aiJob||token!=session)return@evaluateJavascript
+            val parts=raw?.unquoteJs().orEmpty().split("|")
+            val streaming=parts.getOrNull(1)=="1"
+            if(streaming && attempt<12){
+                handler.postDelayed({waitAiIdle(request,token,ch,p,attempt+1,prompt)},1000)
+            }else{
+                if(streaming) ai.evaluateJavascript(ProviderScripts.stop(),null)
+                ai.evaluateJavascript(ProviderScripts.send(p,prompt,true)){sentRaw->
+                    if(request!=aiJob||token!=session)return@evaluateJavascript
+                    val sent=sentRaw?.unquoteJs().orEmpty()
+                    if(!sent.startsWith("ok:")){
+                        status(if(sent=="nobox") "⚠ ${p.label}: chat box not found" else "⚠ ${p.label}: message send failed")
+                        return@evaluateJavascript
+                    }
+                    val parts2=sent.substringAfter("ok:").split(":")
+                    val n0=parts2.getOrNull(0)?.toIntOrNull()?:0
+                    val baseLen=parts2.getOrNull(1)?.toIntOrNull()?:0
+                    status("✓ Sent • waiting for ${p.label} response…")
+                    handler.postDelayed({
+                        if(request==aiJob&&token==session)
+                            pollResponse(request,token,ch,p,0,n0,baseLen,System.currentTimeMillis(),0,0)
+                    },1800)
                 }
             }
         }
     }
 
-    private fun pollResponse(request:Long,token:Long,ch:Chapter,attempt:Int,p:AiProvider){
+    private fun pollResponse(
+        request:Long,token:Long,ch:Chapter,p:AiProvider,attempt:Int,n0:Int,baseLen:Int,
+        started:Long,lastLen:Int,stable:Int
+    ){
         if(request!=aiJob||token!=session)return
-        ai.evaluateJavascript(ProviderScripts.responseTextScript(p)){raw->
+        ai.evaluateJavascript(ProviderScripts.readLen()){raw->
+            if(request!=aiJob||token!=session)return@evaluateJavascript
+            val parts=raw?.unquoteJs().orEmpty().split("|")
+            val n=parts.getOrNull(0)?.toIntOrNull()?:0
+            val streaming=parts.getOrNull(1)=="1"
+            val len=parts.getOrNull(2)?.toIntOrNull()?:0
+            val got=n>n0 || (n==n0 && len>baseLen)
+            val nextStable=if(got && len==lastLen)stable+1 else 0
+            val elapsed=System.currentTimeMillis()-started
+
+            if(got && !streaming && nextStable>=3 && len>=30){
+                finishResponse(request,token,ch,p)
+                return@evaluateJavascript
+            }
+            if(got && nextStable>=15 && len>50){
+                finishResponse(request,token,ch,p)
+                return@evaluateJavascript
+            }
+            if(elapsed>6*60_000){
+                status("Timed out waiting for ${p.label}")
+                return@evaluateJavascript
+            }
+            if(!got && elapsed>60_000){
+                status("⚠ ${p.label} did not start a response")
+                return@evaluateJavascript
+            }
+            if(attempt<360){
+                handler.postDelayed({
+                    pollResponse(request,token,ch,p,attempt+1,n0,baseLen,started,len,nextStable)
+                },1000)
+            }
+        }
+    }
+
+    private fun finishResponse(request:Long,token:Long,ch:Chapter,p:AiProvider){
+        if(request!=aiJob||token!=session)return
+        ai.evaluateJavascript(ProviderScripts.readText()){raw->
             if(request!=aiJob||token!=session)return@evaluateJavascript
             val text=raw?.unquoteJs()?.trim().orEmpty()
-            val h=hash(text)
-            val changed=text.isNotEmpty() && h!=baselineHash && text!=baselineResponse
-            var done=false
-            if(changed){
-                if(text==lastObserved){
-                    if(stableSince==0L)stableSince=System.currentTimeMillis()
-                    if(System.currentTimeMillis()-stableSince>=700){
-                        insertResult(ch,text)
-                        done=true
-                    }
-                }else{
-                    lastObserved=text
-                    stableSince=System.currentTimeMillis()
-                }
+            if(text.length<30){
+                status("⚠ ${p.label}: response could not be read")
+                return@evaluateJavascript
             }
-            if(!done && attempt<360){
-                handler.postDelayed({pollResponse(request,token,ch,attempt+1,p)},300)
-            }else if(!done){
-                status("Timed out waiting for ${p.label}")
-            }
+            insertResult(ch,text)
         }
     }
 
