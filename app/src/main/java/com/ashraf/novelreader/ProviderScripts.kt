@@ -85,7 +85,7 @@ object ProviderScripts {
   CLAUDE:'.font-claude-message,[data-testid="assistant-message"],.prose',
   GROK:'[class*="message-bubble"],[class*="response-content-markdown"],.markdown'
  };
- const q=sels['\${provider.name}']||'[data-message-author-role="assistant"],.markdown,.prose';
+ const q=sels['${provider.name}']||'[data-message-author-role="assistant"],.markdown,.prose';
  const a=[...document.querySelectorAll(q)].filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&(e.innerText||e.textContent||'').trim().length>0});
  if(!a.length)return '';
  let e=a[a.length-1];
