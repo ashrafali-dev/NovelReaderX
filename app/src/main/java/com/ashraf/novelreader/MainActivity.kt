@@ -82,14 +82,14 @@ class MainActivity : Activity() {
         split.setPanes(novel,ai)
         root.addView(split,LinearLayout.LayoutParams(-1,0,1f))
 
-        val bottom=HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled=false
+        val bottom=FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(28,28,34))
         }
         val controls=LinearLayout(this).apply {
             orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
+            gravity=Gravity.CENTER
             setPadding(dp(2),dp(2),dp(2),dp(2))
+            layoutParams=FrameLayout.LayoutParams(-1,-1)
         }
         controls.addView(iconBtn("⚡","Instant Extract"){instant()})
         controls.addView(iconBtn("›","Next chapter"){navigate("next")})
