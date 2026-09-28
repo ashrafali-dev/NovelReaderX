@@ -92,6 +92,7 @@ class MainActivity : Activity() {
         controls.addView(iconBtn("›","Next"){navigate("next")})
         controls.addView(iconBtn("◫","Cycle novel / chatbot / split"){cycleView()})
         controls.addView(iconBtn("✎","Prompt"){editPrompt()})
+        controls.addView(iconBtn("⋮","More options"){showMenu()})
         AiProvider.entries.forEach { p ->
             controls.addView(iconBtn(providerIcon(p),"Use ${p.label}"){switchProvider(p)})
         }
@@ -238,10 +239,6 @@ class MainActivity : Activity() {
             return
         }
         val target=if(dir=="next")old.nextUrl else old.prevUrl
-        if(!target.isNullOrBlank()){
-            novel.loadUrl(target)
-            return
-        }
         if(WebNovelAdapter.isWebNovel(old.url)){
             novel.evaluateJavascript(WebNovelAdapter.navigateFromCatalogScript(dir,old.title,old.url)){raw->
                 val result=raw?.unquoteJs().orEmpty()
@@ -291,6 +288,31 @@ class MainActivity : Activity() {
             setMargins(dp(2),0,dp(2),0)
         }
         setOnClickListener{action()}
+    }
+
+    private fun showMenu(){
+        val items=arrayOf(
+            "↻ Reload novel page",
+            "↻ Reload chatbot",
+            "⌫ Clear chatbot input",
+            "▣ Split view",
+            "📖 Novel only",
+            "💬 Chatbot only",
+            "✎ Translation prompt"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("NovelReaderX")
+            .setItems(items){_,which->
+                when(which){
+                    0 -> novel.reload()
+                    1 -> ai.reload()
+                    2 -> ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
+                    3 -> {viewMode=0;split.showSplit()}
+                    4 -> {viewMode=1;split.showNovelOnly()}
+                    5 -> {viewMode=2;split.showAiOnly()}
+                    6 -> editPrompt()
+                }
+            }.show()
     }
 
     private fun switchProvider(p:AiProvider){
