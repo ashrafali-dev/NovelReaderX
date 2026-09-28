@@ -9,6 +9,7 @@ import android.os.Looper
 import android.view.Gravity
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.*
@@ -32,10 +33,12 @@ class MainActivity : Activity() {
     private var lastObserved=""
     private var viewMode=0 // 0 split, 1 novel, 2 chatbot
     private var autoSendOnLoad=false
+    private var searchEngine="Google"
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         promptStore=PromptStore(this)
+        searchEngine=getPreferences(0).getString("search_engine","Google") ?: "Google"
         buildUi()
         configureWebViews()
         novel.loadUrl("https://www.webnovel.com/")
@@ -88,15 +91,12 @@ class MainActivity : Activity() {
             gravity=Gravity.CENTER_VERTICAL
             setPadding(dp(2),dp(2),dp(2),dp(2))
         }
-        controls.addView(iconBtn("‹","Previous"){navigate("prev")})
-        controls.addView(iconBtn("⚡","Extract"){instant()})
-        controls.addView(iconBtn("›","Next"){navigate("next")})
-        controls.addView(iconBtn("◫","Cycle novel / chatbot / split"){cycleView()})
-        controls.addView(iconBtn("✎","Prompt"){editPrompt()})
+        controls.addView(iconBtn("⚡","Instant Extract"){instant()})
+        controls.addView(iconBtn("›","Next chapter"){navigate("next")})
+        controls.addView(iconBtn("G","ChatGPT"){switchProvider(AiProvider.CHATGPT)})
+        controls.addView(iconBtn("✦","Gemini"){switchProvider(AiProvider.GEMINI)})
+        controls.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
         controls.addView(iconBtn("⋮","More options"){showMenu()})
-        AiProvider.entries.forEach { p ->
-            controls.addView(iconBtn(providerIcon(p),"Use ${p.label}"){switchProvider(p)})
-        }
         bottom.addView(controls)
         root.addView(bottom,LinearLayout.LayoutParams(-1,dp(46)))
 
@@ -112,6 +112,7 @@ class MainActivity : Activity() {
         novel.webViewClient=object:WebViewClient(){
             override fun onPageFinished(v:WebView,url:String){
                 super.onPageFinished(v,url)
+                if(AdBlock.enabled(this@MainActivity)) v.evaluateJavascript(AdBlock.cosmeticJs(),null)
                 session++
                 aiJob++
                 current=null
@@ -134,6 +135,12 @@ class MainActivity : Activity() {
                 if(ProviderScripts.hostMatches(provider,url)) status("${provider.label} ready")
             }
             override fun shouldOverrideUrlLoading(v:WebView,r:WebResourceRequest)=false
+            override fun shouldInterceptRequest(v:WebView,r:WebResourceRequest):WebResourceResponse? {
+                if(AdBlock.enabled(this@MainActivity) && AdBlock.blocked(r.url.toString())){
+                    return WebResourceResponse("text/plain","utf-8",null)
+                }
+                return super.shouldInterceptRequest(v,r)
+            }
         }
     }
 
@@ -279,6 +286,16 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun loadNovelOrSearch(q:String){
+        val u=when{
+            q.startsWith("http://",true)||q.startsWith("https://",true)->q
+            searchEngine=="Bing"->"https://www.bing.com/search?q="+java.net.URLEncoder.encode(q,"UTF-8")
+            searchEngine=="DuckDuckGo"->"https://duckduckgo.com/?q="+java.net.URLEncoder.encode(q,"UTF-8")
+            else->"https://www.google.com/search?q="+java.net.URLEncoder.encode(q,"UTF-8")
+        }
+        novel.loadUrl(u)
+    }
+
     private fun cycleView(){
         viewMode=(viewMode+1)%3
         when(viewMode){
@@ -313,29 +330,37 @@ class MainActivity : Activity() {
     }
 
     private fun showMenu(){
+        val ad=if(AdBlock.enabled(this)) "ON" else "OFF"
         val items=arrayOf(
-            "↻ Reload novel page",
-            "↻ Reload chatbot",
-            "⌫ Clear chatbot input",
-            "▣ Split view",
-            "📖 Novel only",
-            "💬 Chatbot only",
-            "↩ Restore original chapter",
-            "✎ Translation prompt"
+            "‹ Previous chapter","↻ Reload novel page","↻ Reload chatbot",
+            "⌫ Clear chatbot input","▣ Split view","📖 Novel only","💬 Chatbot only",
+            "↩ Restore original chapter","✎ Translation prompt",
+            "AI provider: ${provider.label}","Search engine: $searchEngine","Ad blocker: $ad"
         )
-        AlertDialog.Builder(this)
-            .setTitle("NovelReaderX")
-            .setItems(items){_,which->
-                when(which){
-                    0 -> novel.reload()
-                    1 -> ai.reload()
-                    2 -> ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
-                    3 -> {viewMode=0;split.showSplit()}
-                    4 -> {viewMode=1;split.showNovelOnly()}
-                    5 -> {viewMode=2;split.showAiOnly()}
-                    6 -> novel.evaluateJavascript(NovelJs.restoreOriginal()){status("Original chapter restored")}
-                    7 -> editPrompt()
-                }
+        AlertDialog.Builder(this).setTitle("NovelReaderX").setItems(items){_,which->
+            when(which){
+                0->navigate("prev");1->novel.reload();2->ai.reload()
+                3->ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
+                4->{viewMode=0;split.showSplit()};5->{viewMode=1;split.showNovelOnly()}
+                6->{viewMode=2;split.showAiOnly()}
+                7->novel.evaluateJavascript(NovelJs.restoreOriginal()){status("Original chapter restored")}
+                8->editPrompt();9->chooseProvider();10->chooseSearchEngine()
+                11->{AdBlock.setEnabled(this,!AdBlock.enabled(this));status("Ad blocker "+if(AdBlock.enabled(this))"ON" else "OFF");novel.reload()}
+            }
+        }.show()
+    }
+
+    private fun chooseProvider(){
+        val labels=AiProvider.entries.map{it.label}.toTypedArray()
+        AlertDialog.Builder(this).setTitle("AI provider")
+            .setSingleChoiceItems(labels,AiProvider.entries.indexOf(provider)){d,w->switchProvider(AiProvider.entries[w]);d.dismiss()}.show()
+    }
+
+    private fun chooseSearchEngine(){
+        val engines=arrayOf("Google","Bing","DuckDuckGo")
+        AlertDialog.Builder(this).setTitle("Search engine")
+            .setSingleChoiceItems(engines,engines.indexOf(searchEngine).coerceAtLeast(0)){d,w->
+                searchEngine=engines[w];getPreferences(0).edit().putString("search_engine",searchEngine).apply();d.dismiss()
             }.show()
     }
 
