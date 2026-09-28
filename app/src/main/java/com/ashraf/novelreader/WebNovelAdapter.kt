@@ -59,6 +59,16 @@ object WebNovelAdapter {
  }
  if(!title)title=clean(document.title||'');
  let body=textOf(best);
+ const titleNorm=clean(title).toLowerCase();
+ body=body.split(/\n+/).map(x=>x.trim()).filter(x=>{
+   const n=clean(x).toLowerCase();
+   if(!n)return false;
+   if(titleNorm && n===titleNorm)return false;
+   if(/(?:webweb\+ai|download app|read offline)/i.test(n))return false;
+   if(/^(?:chapter|অধ্যায়)\s*\d+\s*[^\n]*(?:\/|#|%)/i.test(n))return false;
+   if(/^\s*(?:chapter|অধ্যায়)\s*\d+\s*[:：]\s*[^\n]+$/i.test(n) && titleNorm && n!==titleNorm)return false;
+   return true;
+ }).join('\n\n').trim();
  if(title&&body.toLowerCase().startsWith(title.toLowerCase()))body=body.slice(title.length).trim();
  const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
  const selectorFor=e=>{
