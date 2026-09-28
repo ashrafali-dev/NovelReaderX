@@ -42,6 +42,10 @@ object ProviderScripts {
 (function(){const text=$q;const vis=e=>{if(!e)return false;const r=e.getBoundingClientRect();return r.width>2&&r.height>2};let b=[...document.querySelectorAll('rich-textarea .ql-editor,rich-textarea [contenteditable=\"true\"],div.ql-editor[contenteditable=\"true\"],[aria-label="Enter a prompt here"],[contenteditable=\"true\"][role=\"textbox\"],textarea,[role=\"textbox\"]')].find(vis);if(!b)return 'nobox';b.focus();if(b.matches('textarea')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value');p.set.call(b,text)}else{document.execCommand('selectAll');document.execCommand('insertText',false,text);if(!(b.innerText||b.textContent||'').trim())b.textContent=text}b.dispatchEvent(new Event('input',{bubbles:true}));b.dispatchEvent(new Event('change',{bubbles:true}));setTimeout(()=>{let s=[...document.querySelectorAll('button')].find(x=>vis(x)&&!x.disabled&&(x.getAttribute('aria-label')||'').match(/send|submit/i));if(s)s.click();else b.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}))},10);return 'sent'})()
 """.trimIndent()
 
+    fun clearComposerScript(): String = """
+(()=>{document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]').forEach(e=>{try{if(e.matches('textarea')){const p=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value');if(p)p.set.call(e,'')}else{e.innerHTML='';e.textContent=''}}catch(_){}});return 'cleared'})()
+""".trimIndent()
+
     fun responseTextScript(provider: AiProvider): String = when(provider) {
         AiProvider.GEMINI -> """(()=>{const a=[...document.querySelectorAll('model-response,message-content,.model-response-text,.response-content')];return (a.at(-1)?.innerText||'').trim()})()"""
         AiProvider.CHATGPT -> """(()=>{const a=[...document.querySelectorAll('[data-message-author-role="assistant"],div.markdown')];return (a.at(-1)?.innerText||'').trim()})()"""
