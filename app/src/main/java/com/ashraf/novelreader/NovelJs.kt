@@ -11,8 +11,6 @@ object NovelJs {
 (function(){
   let text=$q;
   const clean=s=>(s||'').replace(/\u00a0/g,' ').trim();
-
-  // Remove provider UI labels, never show them in the reader.
   text=text.replace(/^\s*(?:ChatGPT|Gemini|Claude|DeepSeek|Grok)\s+said\s*[:：]?\s*/i,'').trim();
 
   let el=window.__nrContentElement;
@@ -21,15 +19,6 @@ object NovelJs {
     if(remembered){try{el=document.querySelector(remembered)}catch(_){}}
   }
   if(!el)return 'not-found';
-
-  if(el.getAttribute('data-novelreaderx-translated')==='1' &&
-     window.__nrOriginalElement===el && window.__nrOriginalHtml){
-    el.innerHTML=window.__nrOriginalHtml;
-    el.removeAttribute('data-novelreaderx-translated');
-  }
-
-  window.__nrOriginalHtml=el.innerHTML;
-  window.__nrOriginalElement=el;
 
   const normalized=text.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim();
   const parts=normalized.split(/\n\s*\n+/).map(x=>x.trim()).filter(Boolean);
@@ -41,74 +30,89 @@ object NovelJs {
   }
   if(!finalParts.length)return 'empty';
 
-  // Hide only the site's ordinary text nodes. Links/buttons/forms and all
-  // their ancestors remain in the real DOM, so the original page stays
-  // interactive instead of becoming a fake HTML reader.
   const skip='SCRIPT,STYLE,NOSCRIPT,SVG,IMG,VIDEO,AUDIO,CANVAS,BUTTON,A,INPUT,SELECT,TEXTAREA,[role="button"],[onclick],[contenteditable="true"],.j_readTool,.j_catalog_list';
-  const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
-  const nodes=[];
-  let n;
-  while(n=walker.nextNode()){
-    if(!clean(n.nodeValue))continue;
-    const p=n.parentElement;
-    if(!p)continue;
-    try{if(p.closest(skip))continue}catch(_){}
-    nodes.push(n);
-  }
   const blocks=[];
-  nodes.forEach(x=>{
-    const parent=x.parentElement;
-    const s=document.createElement('span');
-    s.setAttribute('data-nr-hidden-original','1');
-    s.style.display='none';
-    x.parentNode.insertBefore(s,x);
-    s.appendChild(x);
-    if(parent && /^(P|LI|BLOCKQUOTE)$/i.test(parent.tagName) && !parent.querySelector('a,button,[role="button"],input,select,textarea')){
-      blocks.push(parent);
+  const seen=new Set();
+  const candidates=[...el.querySelectorAll('p,blockquote,li')];
+  for(const e of candidates){
+    if(seen.has(e))continue;
+    try{if(e.matches(skip)||e.closest(skip))continue}catch(_){}
+    const t=clean(e.textContent||'');
+    if(t.length<2)continue;
+    if(e.querySelector('p,blockquote,li'))continue;
+    blocks.push(e); seen.add(e);
+  }
+  if(!blocks.length){
+    const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+    let n;
+    while(n=walker.nextNode()){
+      if(!clean(n.nodeValue))continue;
+      const p=n.parentElement;
+      if(!p)continue;
+      try{if(p.closest(skip))continue}catch(_){}
+      if(!seen.has(p)){blocks.push(p);seen.add(p)}
     }
-  });
-  blocks.forEach(e=>{e.style.display='none';});
+  }
+  if(!blocks.length)return 'no-targets';
 
-  const trans=document.createElement('div');
-  trans.setAttribute('data-nr-translation','1');
-  trans.style.boxSizing='border-box';
-  trans.style.display='block';
-  trans.style.width='100%';
-  trans.style.maxWidth='100%';
-  trans.style.paddingLeft='18px';
-  trans.style.paddingRight='18px';
-  trans.style.marginLeft='0';
-  trans.style.marginRight='0';
-  trans.style.textAlign='left';
+  const originals=blocks.map(e=>e.textContent||'');
+  window.__nrTranslationState={element:el,blocks:blocks,originals:originals,translated:[],active:true};
 
-  finalParts.forEach((part,index)=>{
-    const p=document.createElement('p');
-    p.textContent=part;
-    p.style.boxSizing='border-box';
-    p.style.width='100%';
-    p.style.margin='0 0 1em 0';
-    p.style.padding='0';
-    p.style.textAlign='left';
-    if(index===0)p.className='nr-title';
-    trans.appendChild(p);
-  });
+  const translated=[];
+  const count=blocks.length;
+  if(finalParts.length===count){
+    for(let i=0;i<count;i++) translated.push(finalParts[i]);
+  }else if(count===1){
+    translated.push(finalParts.join('\n\n'));
+  }else{
+    for(let i=0;i<count;i++){
+      const start=Math.floor(i*finalParts.length/count);
+      const end=Math.max(start+1,Math.floor((i+1)*finalParts.length/count));
+      translated.push(finalParts.slice(start,end).join('\n\n'));
+    }
+  }
 
-  // Do not scroll or replace the site shell. Insert translation into the
-  // actual chapter container and leave its navigation/buttons in place.
-  el.insertBefore(trans,el.firstChild);
-  el.setAttribute('data-novelreaderx-translated','1');
-  window.__nrTranslatedElement=trans;
+  for(let i=0;i<blocks.length;i++) blocks[i].textContent=translated[i]||'';
+  window.__nrTranslationState.translated=translated;
+
+  let host=document.getElementById('novelreaderx-toggle-host');
+  if(!host){
+    host=document.createElement('div');
+    host.id='novelreaderx-toggle-host';
+    host.style.cssText='position:fixed;right:12px;top:12px;z-index:2147483647;';
+    document.documentElement.appendChild(host);
+    const shadow=host.attachShadow({mode:'open'});
+    const style=document.createElement('style');
+    style.textContent='button{border:0;border-radius:18px;padding:7px 12px;background:rgba(20,20,24,.88);color:#fff;font:600 13px system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.28);cursor:pointer}button:active{transform:scale(.96)}';
+    const b=document.createElement('button');
+    b.id='b'; b.type='button'; b.textContent='বাংলা';
+    shadow.appendChild(style); shadow.appendChild(b);
+    b.addEventListener('click',()=>{
+      const s=window.__nrTranslationState;
+      if(!s||!s.blocks?.length)return;
+      s.active=!s.active;
+      for(let i=0;i<s.blocks.length;i++) s.blocks[i].textContent=(s.active?s.translated[i]:s.originals[i])||'';
+      b.textContent=s.active?'English':'বাংলা';
+    });
+  }
+  const button=host.shadowRoot?.getElementById('b');
+  if(button)button.textContent='English';
+
   window.__nrContentElement=el;
+  window.__nrTranslatedElement=el;
   return 'inserted';
 })()
 """.trimIndent()
     }
 
-
     fun restoreOriginal():String = """
-(()=>{const e=window.__nrOriginalElement,h=window.__nrOriginalHtml;
-if(!e||!h||!document.contains(e))return 'none';
-e.innerHTML=h;e.removeAttribute('data-novelreaderx-translated');return 'restored';})()
+(()=>{const s=window.__nrTranslationState;
+if(!s||!s.blocks?.length)return 'none';
+for(let i=0;i<s.blocks.length;i++)s.blocks[i].textContent=s.originals[i]||'';
+s.active=false;
+const b=document.getElementById('novelreaderx-toggle-host')?.shadowRoot?.getElementById('b');
+if(b)b.textContent='বাংলা';
+return 'restored';})()
 """.trimIndent()
 
     fun siteNext(dir:String)= """
