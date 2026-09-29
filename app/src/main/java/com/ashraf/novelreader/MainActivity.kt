@@ -185,7 +185,7 @@ class MainActivity : Activity() {
     }
 
     private fun instant(){
-        ai.evaluateJavascript(ProviderScripts.clearComposerScript(),null)
+        ai.evaluateJavascript(ProviderScripts.clearComposerScript()){ hideKeyboard() }
         val token=session
         novel.evaluateJavascript(NovelJs.extract()){raw->
             if(token!=session)return@evaluateJavascript
@@ -234,6 +234,7 @@ class MainActivity : Activity() {
             }else{
                 if(streaming) ai.evaluateJavascript(ProviderScripts.stop(),null)
                 ai.evaluateJavascript(ProviderScripts.send(p,prompt,true)){sentRaw->
+                    hideKeyboard()
                     if(request!=aiJob||token!=session)return@evaluateJavascript
                     val sent=sentRaw?.unquoteJs().orEmpty()
                     if(!sent.startsWith("ok:")){
@@ -502,6 +503,12 @@ class MainActivity : Activity() {
 
     private fun hash(s:String)=MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString(""){"%02x".format(it)}
     private fun String.unquoteJs():String=runCatching{JSONObjectCompat.unquote(this)}.getOrDefault(this)
+    private fun hideKeyboard(){
+        val imm=getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        imm.hideSoftInputFromWindow(ai.windowToken,0)
+        ai.clearFocus()
+    }
+
     private fun status(s:String){status.text=s}
 
     private fun btn(text:String,action:()->Unit)=Button(this).apply{
