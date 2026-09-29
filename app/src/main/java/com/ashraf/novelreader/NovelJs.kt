@@ -161,6 +161,7 @@ object NovelJs {
   return 'inserted';
 })()
 """.trimIndent()
+    }
 
     fun restoreOriginal():String = """
 (()=>{const s=window.__nrTranslationState;
