@@ -7,103 +7,110 @@ object WebNovelAdapter {
 
     fun extractScript(): String = """
 (function(){
- const host=(location.hostname||'').toLowerCase();
- const isWebNovel=host==='webnovel.com'||host.endsWith('.webnovel.com');
- const isWtr=host==='wtr-lab.com'||host.endsWith('.wtr-lab.com');
- const clean=s=>(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
- const BAD='script,style,noscript,iframe,nav,header,footer,aside,form,button,svg,img,video,[aria-hidden="true"],.ads,.ad,[class*="advert" i],[id*="advert" i],[class*="comment" i],[id*="comment" i],[class*="sidebar" i],[class*="toolbar" i],[class*="reader-nav" i],[class*="chapter-nav" i],.j_catalog_list,.j_readTool';
+ const clean=s=>(s||'').replace(/\\u00a0/g,' ').replace(/[ \\t]+/g,' ').replace(/\\n[ \\t]+/g,'\\n').replace(/\\n{3,}/g,'\\n\\n').trim();
+ const BAD='script,style,noscript,iframe,nav,header,footer,aside,form,button,svg,img,video,audio,canvas,[aria-hidden="true"],[hidden],.ads,.ad,[class*="advert" i],[id*="advert" i],[class*="comment" i],[id*="comment" i],[class*="sidebar" i],[id*="sidebar" i],[class*="toolbar" i],[id*="toolbar" i],[class*="cookie" i],[id*="cookie" i],[class*="popup" i],[id*="popup" i],.j_catalog_list,.j_readTool';
+ const semantic=/(^|[-_ ])(?:chapter|content|reader|reading|novel|story|prose|article|entry|post|text|body|main)([-_ ]|$)/i;
+ const uiWord=/(comment|reply|share|follow|login|sign.?in|register|subscribe|advert|cookie|menu|sidebar|toolbar|navigation|download app|read offline)/i;
  const textOf=e=>{
    if(!e)return '';
    const c=e.cloneNode(true);
    try{c.querySelectorAll(BAD).forEach(x=>x.remove())}catch(_){}
-   c.querySelectorAll('br').forEach(x=>x.replaceWith('\n'));
-   const ps=[...c.querySelectorAll('p')].map(x=>clean(x.textContent)).filter(Boolean);
-   if(ps.length>=2)return ps.join('\n\n');
-   const blocks=[...c.querySelectorAll(':scope > div, :scope > section, :scope > article, :scope > p')].map(x=>clean(x.textContent)).filter(Boolean);
-   if(blocks.length>=2)return blocks.join('\n\n');
+   c.querySelectorAll('br').forEach(x=>x.replaceWith('\\n'));
    return clean(c.textContent||'');
  };
- const noise=s=>(s.match(/closechapters|prevnext|download app|read offline|lora|roboto|10\.4%/gi)||[]).length;
- const candidates=isWtr
-   ? ['.chapter-body','.chapter-tracker [data-chapter-no]','#chapter-content','.chapter-content','article','main']
-   : isWebNovel
-   ? ['.j_readContent','.cha-content','.chapter-content','#chapter-content','.chapter-body','.chapter-c','.txt','#chaptercontent','.content','article']
-   : ['#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c','.reading-content','.text-left','#content','.entry-content','.cha-content','.cha-words','.chapter-body','.novel_content','.j_readContent','.txt','#chaptercontent','.chapter-c','#article','.article-content','.content','article'];
- let best=null,bestLen=0,bestScore=-Infinity,bestSelector='';
- for(const sel of candidates){
-   try{
-     for(const e of document.querySelectorAll(sel)){
-       const t=textOf(e);
-       if(t.length<120)continue;
-       const pc=e.querySelectorAll('p').length;
-       const direct=e.querySelectorAll(':scope > div, :scope > section, :scope > article, :scope > p').length;
-       const n=noise(t);
-       let score=t.length+Math.min(pc,30)*450+Math.min(direct,40)*180-n*1200;
-       if(isWtr&&sel==='.chapter-body')score+=100000;
-       if(isWebNovel&&sel==='.j_readContent')score+=3000;
-       score-=candidates.indexOf(sel)*25;
-       if(score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector=sel;}
-     }
-   }catch(_){}
+ const directBlocks=e=>e?e.querySelectorAll(':scope > p,:scope > div,:scope > section,:scope > article,:scope > blockquote,:scope > li').length:0;
+ const paragraphCount=e=>e?e.querySelectorAll('p,blockquote').length:0;
+ const linkTextLength=e=>{
+   let n=0;
+   try{e.querySelectorAll('a,button,[role="button"]').forEach(x=>n+=(x.innerText||x.textContent||'').trim().length)}catch(_){}
+   return n;
+ };
+ const depth=e=>{let n=0;for(let x=e;x&&x!==document.body;x=x.parentElement)n++;return n};
+ const scoreElement=e=>{
+   if(!e||e===document.body||e===document.documentElement)return null;
+   const t=textOf(e),len=t.length;
+   if(len<120)return null;
+   const pc=Math.min(paragraphCount(e),50);
+   const db=Math.min(directBlocks(e),60);
+   const links=linkTextLength(e);
+   const ratio=links/Math.max(1,len);
+   const meta=((e.id||'')+' '+(e.className&&typeof e.className==='string'?e.className:'')+' '+(e.getAttribute?.('role')||'')).toLowerCase();
+   let score=Math.log2(len+1)*900+Math.min(len,12000)*0.45+pc*700+db*220;
+   if(e.matches?.('article,main,[role="main"]'))score+=2500;
+   if(semantic.test(meta))score+=5000;
+   if(/chapter|prose|reader|reading/.test(meta))score+=3500;
+   if(uiWord.test(meta))score-=5000;
+   if(ratio>.35)score-=Math.min(9000,ratio*12000);
+   if(len>30000)score-=Math.min(12000,(len-30000)*0.12);
+   score-=Math.max(0,depth(e)-12)*120;
+   const r=e.getBoundingClientRect?.();
+   if(r&&r.width>20&&r.height>20)score+=500;
+   return {e,t,len,score,pc,db};
+ };
+ const elements=[...document.querySelectorAll('article,main,[role="main"],section,div')];
+ let best=null;
+ for(const e of elements){
+   const x=scoreElement(e);
+   if(!x)continue;
+   if(!best||x.score>best.score)best=x;
  }
  if(!best){
-   for(const e of document.querySelectorAll('main,article,section,div')){
-     if(e===document.body||e===document.documentElement)continue;
-     const t=textOf(e),pc=e.querySelectorAll('p').length;
-     const blocks=e.querySelectorAll(':scope > div, :scope > section, :scope > article, :scope > p').length;
-     if(t.length<300)continue;
-     if(pc<2&&blocks<2&&t.length<800)continue;
-     const score=t.length+Math.min(pc,30)*450+Math.min(blocks,40)*180-noise(t)*1200;
-     if(score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector='';}
+   for(const e of document.querySelectorAll('p,blockquote')){
+     const x=scoreElement(e);
+     if(x&&(!best||x.score>best.score))best=x;
    }
  }
- if(!best||bestLen<120)return JSON.stringify({ok:false});
- const titleSelectors=isWtr
-   ? ['.chapter-title','.chapter-tracker h1','.chapter-tracker h2','h1','h2']
-   : isWebNovel
-   ? ['.chapter-title','.j_chapterName','.chapter-name','.chr-title','#chapter-heading','h1','h2']
-   : ['.chapter-title','.chr-title','#chapter-heading','.j_chapterName','.chapter-name','h1','h2'];
+ if(!best||best.len<120)return JSON.stringify({ok:false});
+ let body=best.t;
  let title='';
- for(const sel of titleSelectors){
-   try{const e=document.querySelector(sel),t=clean(e?.textContent);if(t&&t.length<180&&!/close chapters|prev|next|download app/i.test(t)){title=t;break;}}catch(_){}
+ const titleCandidates=[...document.querySelectorAll('h1,h2,[class*="title" i],[id*="title" i]')];
+ let titleScore=-1;
+ for(const e of titleCandidates){
+   const t=clean(e.textContent);
+   if(!t||t.length>180||uiWord.test(t))continue;
+   let s=0;
+   if(/^chapter\\s*[-#:.]?\\s*\\d+/i.test(t)||/^episode\\s*[-#:.]?\\s*\\d+/i.test(t)||/^ch\\.?\\s*\\d+/i.test(t))s+=8;
+   if(e.tagName==='H1')s+=5; else if(e.tagName==='H2')s+=3;
+   if(t.length<100)s+=2;
+   if(s>titleScore){titleScore=s;title=t}
  }
  if(!title)title=clean(document.title||'');
- let body=textOf(best);
  const titleNorm=clean(title).toLowerCase();
- body=body.split(/\n+/).map(x=>x.trim()).filter(x=>{
+ body=body.split(/\\n+/).map(x=>x.trim()).filter(x=>{
    const n=clean(x).toLowerCase();
    if(!n)return false;
    if(titleNorm&&n===titleNorm)return false;
-   if(/(?:webweb\+ai|download app|read offline)/i.test(n))return false;
-   if(/^(?:chapter|অধ্যায়)\s*\d+\s*[^\n]*(?:\/|#|%)/i.test(n))return false;
+   if(uiWord.test(n)&&n.length<180)return false;
    return true;
- }).join('\n\n').trim();
+ }).join('\\n\\n').trim();
  if(title&&body.toLowerCase().startsWith(title.toLowerCase()))body=body.slice(title.length).trim();
  if(body.length<120)return JSON.stringify({ok:false});
- const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
+ const num=(title.match(/(?:chapter|chap|ch|episode|ep)\\.?\\s*[-#:.]?\\s*(\\d+(?:\\.\\d+)?)/i)||title.match(/第\\s*(\\d+)\\s*[章话話節回]/)||[])[1]||'';
  const selectorFor=e=>{
    if(!e)return '';
    if(e.id&&/^[A-Za-z_][A-Za-z0-9_-]*$/.test(e.id))return '#'+e.id;
    const cls=[...e.classList].filter(x=>/^[A-Za-z_][A-Za-z0-9_-]*$/.test(x)).slice(0,3);
    return e.tagName.toLowerCase()+(cls.length?'.'+cls.join('.'):'' );
  };
- const rememberedSelector=bestSelector||selectorFor(best);
- window.__nrContentElement=best;
- window.__nrContentSelector=rememberedSelector;
+ window.__nrContentElement=best.e;
+ window.__nrContentSelector=selectorFor(best.e);
  const links=[...document.querySelectorAll('a[href],button,[role="button"]')];
  function pick(next){
-   const re=next?/next|next chapter|continue|›|»|→/i:/prev|previous|previous chapter|‹|«|←/i;
-   let target=null,score=0;
+   const re=next?/^(?:next|next chapter|continue|older|newer)\\b|next chapter|continue reading|›|»|→/i:/^(?:prev|previous|previous chapter|older|newer)\\b|previous chapter|‹|«|←/i;
+   let target=null,bestScore=-1;
    for(const e of links){
-     const meta=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,e.className].join(' ');
+     const meta=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,typeof e.className==='string'?e.className:''].join(' ');
      if(!re.test(meta))continue;
      const r=e.getBoundingClientRect();if(r.width<2||r.height<2)continue;
-     let s=/chapter/i.test(meta)?4:1;if(e.tagName==='A'&&e.href)s+=2;
-     if(s>score){score=s;target=e;}
+     let s=0;
+     if(/chapter/i.test(meta))s+=5;
+     if(e.tagName==='A'&&e.href)s+=3;
+     if(e.closest('nav'))s+=1;
+     if(s>bestScore){bestScore=s;target=e}
    }
    return target?.href||null;
  }
- const chapterText=title?(title+'\n\n'+body):body;
+ const chapterText=title?(title+'\\n\\n'+body):body;
  return JSON.stringify({ok:true,url:location.href,title,num,text:chapterText,next:pick(true),prev:pick(false)});
 })()
 """.trimIndent()
