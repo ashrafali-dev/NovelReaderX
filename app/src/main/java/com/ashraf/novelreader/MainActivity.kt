@@ -203,7 +203,7 @@ class MainActivity : Activity() {
             val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs().orEmpty())
             if(ch!=null){
                 handleChapter(ch,true)
-            }else if(attempt<10){
+            }else if(attempt<30){
                 handler.postDelayed({fastExtract(attempt+1,token,url)},120)
             }
         }
