@@ -202,7 +202,19 @@ class MainActivity : Activity() {
             if(token!=session)return@evaluateJavascript
             val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs().orEmpty())
             if(ch!=null){
-                handleChapter(ch,true)
+                val oldNorm=previousChapterText.trim().replace(Regex("\\s+")," ")
+                val newNorm=ch.text.trim().replace(Regex("\\s+")," ")
+                val sameOld=oldNorm.isNotBlank() && (
+                    hash(oldNorm)==hash(newNorm) ||
+                    (oldNorm.length>500 && newNorm.length>500 &&
+                     oldNorm.substring(0,500)==newNorm.substring(0,500) &&
+                     kotlin.math.abs(oldNorm.length-newNorm.length) < 1200)
+                )
+                if(!sameOld){
+                    handleChapter(ch,true)
+                }else if(attempt<75){
+                    handler.postDelayed({fastExtract(attempt+1,token,url)},120)
+                }
             }else if(attempt<75){
                 handler.postDelayed({fastExtract(attempt+1,token,url)},120)
             }
@@ -213,6 +225,7 @@ class MainActivity : Activity() {
         if(ch.text.length<120)return
         if(current?.id==ch.id && auto)return
         current=ch
+        previousChapterText=""
         status("✓ ${ch.title.ifBlank{"Chapter ${ch.number}"}} • ${ch.text.length} chars")
         if(auto)sendChapter(ch)
     }
@@ -331,6 +344,7 @@ class MainActivity : Activity() {
 
     private fun navigate(dir:String){
         val old=current
+        previousChapterText=old?.text.orEmpty()
         session++
         aiJob++
         current=null
