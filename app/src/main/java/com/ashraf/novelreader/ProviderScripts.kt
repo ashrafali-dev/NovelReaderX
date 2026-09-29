@@ -91,6 +91,7 @@ function __nrBox(){
  box.dispatchEvent(new Event('input',{bubbles:true}));
  try{box.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:text}));}catch(e){}
  box.dispatchEvent(new Event('change',{bubbles:true}));
+ try{box.blur();}catch(e){}
 
  if(doSend){
    var delay=Math.min(2500,Math.max(900,900+Math.floor(text.length/60)));
@@ -111,6 +112,7 @@ function __nrBox(){
      if(btn){btn.click();return;}
      box.focus();
      box.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));
+     try{box.blur();}catch(e){}
      box.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));
    },delay);
  }
@@ -164,6 +166,7 @@ function __nrBox(){
    }
    b.dispatchEvent(new Event('input',{bubbles:true}));
    b.dispatchEvent(new Event('change',{bubbles:true}));
+   try{b.blur();}catch(e){}
  }catch(e){}
  return 'cleared';
 })()
