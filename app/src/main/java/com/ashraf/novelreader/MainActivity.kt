@@ -26,6 +26,7 @@ class MainActivity : Activity() {
 
     private var provider=AiProvider.CHATGPT
     private var current: Chapter?=null
+    private var previousChapterText=""
     private var session=0L
     private var aiJob=0L
     private var baselineResponse=""
