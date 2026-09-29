@@ -58,6 +58,9 @@ object WebNovelAdapter {
    const t=textOf(e),len=t.length;
    if(len<180||len>120000)continue;
    const bs=blockStats(e),meta=metaOf(e);
+   // A chapter root normally owns multiple paragraph-like blocks. A single
+   // long paragraph is not enough: choosing it loses the rest of the chapter.
+   if(bs.count<2 && !/(chapter|content|reader|reading|prose|article|story)/i.test(meta))continue;
    const own=ownText(e).length;
    let score=0;
    score += Math.log2(len+1)*250;
@@ -90,8 +93,10 @@ object WebNovelAdapter {
    try{e.querySelectorAll('a,button,[role="button"]').forEach(x=>linkLen+=(x.innerText||x.textContent||'').trim().length)}catch(_){}
    const linkRatio=linkLen/Math.max(1,len);
    if(linkRatio>.25)score-=Math.min(10000,linkRatio*14000);
-   if(bs.count>=3)score+=1800;
+   if(bs.count>=2)score+=2500;
+   if(bs.count>=3)score+=2200;
    if(bs.count>=8)score+=1800;
+   if(bs.count===1)score-=7000;
    candidates.push({e,t,len,score,blocks:bs.count,nestedMax});
  }
 
@@ -118,6 +123,9 @@ object WebNovelAdapter {
      const dt=textOf(d),ratio=dt.length/Math.max(1,best.len);
      if(ratio<0.72||dt.length<180)continue;
      const bs=blockStats(d),m=metaOf(d);
+     // Never descend into a lone paragraph-like child; that was the bug that
+     // could reduce a full chapter to its first long paragraph.
+     if(bs.count<2)continue;
      let s=ratio*4000+bs.count*700+(semantic.test(m)?1800:0)+(chapterName.test(m)?2200:0);
      if(uiWord.test(m))s-=5000;
      if(s>childScore){childScore=s;childBest={e:d,t:dt,len:dt.length,score:s,blocks:bs.count}}
