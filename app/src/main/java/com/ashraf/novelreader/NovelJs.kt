@@ -9,8 +9,11 @@ object NovelJs {
         val q=JSONObject.quote(text)
         return """
 (function(){
-  const text=$q;
+  let text=$q;
   const clean=s=>(s||'').replace(/\u00a0/g,' ').trim();
+
+  // Never insert provider UI prefixes such as "ChatGPT said:" into the novel.
+  text=text.replace(/^\s*(?:ChatGPT|Gemini|Claude|DeepSeek|Grok)\s+said\s*[:：]?\s*/i,'').trim();
 
   let el=window.__nrContentElement;
   if(!el || !document.contains(el)){
@@ -19,27 +22,25 @@ object NovelJs {
   }
 
   const selectors=[
-    '#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c',
-    '.reading-content','.text-left','#content','.entry-content','.cha-content','.cha-words',
-    '.chapter-body','.novel_content','.j_readContent','.txt','#chaptercontent','.chapter-c',
-    '#article','.article-content','.content','article'
+    '.j_readContent','.cha-content','#chapter-content','.chapter-content','.chapter_content',
+    '#chr-content','.chr-c','.reading-content','.chapter-body','.chapter-c','.txt',
+    '#chaptercontent','.novel_content','.cha-words','.entry-content','.article-content',
+    '#article','.text-left','#content','.content','article'
   ];
 
   if(!el){
-    let best=null,bestScore=0;
     for(const sel of selectors){
       try{
-        for(const e of document.querySelectorAll(sel)){
+        const found=[...document.querySelectorAll(sel)].find(e=>{
           const t=clean(e.innerText||e.textContent);
-          if(t.length<300)continue;
-          const ps=[...e.querySelectorAll('p')].filter(p=>clean(p.innerText||p.textContent).length>0);
-          const score=t.length+ps.length*500;
-          if(score>bestScore){bestScore=score;best=e;}
-        }
+          const ps=e.querySelectorAll('p').length;
+          return t.length>=300 && (ps>=2 || sel==='.j_readContent' || sel==='.cha-content');
+        });
+        if(found){el=found;break;}
       }catch(_){}
     }
-    el=best;
   }
+
   if(!el)return 'not-found';
 
   if(el.getAttribute('data-novelreaderx-translated')!=='1' ||
@@ -50,10 +51,7 @@ object NovelJs {
   }
 
   const normalized=text.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim();
-  const parts=normalized
-    .split(/\n\s*\n+/)
-    .map(x=>x.trim())
-    .filter(Boolean);
+  const parts=normalized.split(/\n\s*\n+/).map(x=>x.trim()).filter(Boolean);
 
   const finalParts=[];
   for(const part of parts){
@@ -64,29 +62,27 @@ object NovelJs {
 
   const oldParagraph=el.querySelector('p');
   const frag=document.createDocumentFragment();
-  for(const part of finalParts){
+  finalParts.forEach((part,index)=>{
     const p=document.createElement('p');
     p.textContent=part;
-    if(finalParts.length>0 && part===finalParts[0]) p.className='nr-title';
+    if(index===0)p.className='nr-title';
     if(oldParagraph){
       const cs=getComputedStyle(oldParagraph);
       if(cs.marginTop)p.style.marginTop=cs.marginTop;
       if(cs.marginBottom)p.style.marginBottom=cs.marginBottom;
-      if(cs.lineHeight)p.style.lineHeight=cs.lineHeight;
-      if(cs.fontSize)p.style.fontSize=cs.fontSize;
     }else{
       p.style.margin='0 0 1em 0';
-      p.style.lineHeight='1.75';
     }
     p.style.textAlign='left';
     p.style.width='100%';
     frag.appendChild(p);
-  }
+  });
 
+  // Replace ONLY the actual chapter-body element. Never replace an outer
+  // reader shell that contains Next/Prev/buttons/toolbars.
   el.innerHTML='';
   el.appendChild(frag);
 
-  // Keep a comfortable reading inset after replacing the original chapter DOM.
   el.style.boxSizing='border-box';
   el.style.paddingLeft='18px';
   el.style.paddingRight='18px';
