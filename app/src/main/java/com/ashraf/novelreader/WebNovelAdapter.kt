@@ -28,59 +28,27 @@ object WebNovelAdapter {
  const candidates=isWebNovel
    ? ['.j_readContent','.cha-content','.chapter-content','#chapter-content','.chapter-body','.chapter-c','.txt','#chaptercontent','.content','article']
    : ['#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c','.reading-content','.text-left','#content','.entry-content','.cha-content','.cha-words','.chapter-body','.novel_content','.j_readContent','.txt','#chaptercontent','.chapter-c','#article','.article-content','.content','article'];
- let best=null,bestLen=0,bestSelector='';
-
- // The selected node is later replaced with translated paragraphs.
- // Select the real chapter body, not an outer .content/article that may
- // also contain Next/Prev, menus, or reader controls.
- const candidates=isWebNovel
-   ? ['.j_readContent','.cha-content','#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c','.reading-content','.chapter-body','.chapter-c','.txt','#chaptercontent','.novel_content','.cha-words','.entry-content','.article-content','#article','.text-left','#content','.content','article']
-   : ['#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c','.reading-content','.chapter-body','.chapter-c','.txt','#chaptercontent','.novel_content','.j_readContent','.cha-content','.cha-words','.entry-content','.article-content','#article','.text-left','#content','.content','article'];
-
- const specificSelector=[
-   '.j_readContent','.cha-content','#chapter-content','.chapter-content','.chapter_content',
-   '#chr-content','.chr-c','.reading-content','.chapter-body','.chapter-c','.txt',
-   '#chaptercontent','.novel_content','.cha-words','.entry-content','.article-content','#article'
- ].join(',');
-
+ let best=null,bestLen=0,bestScore=-Infinity,bestSelector='';
  for(const sel of candidates){
    try{
      for(const e of document.querySelectorAll(sel)){
        const t=textOf(e);
-       const pc=e.querySelectorAll('p').length;
        if(t.length<300)continue;
-
-       // If a more specific chapter node exists inside this element, this
-       // element is an outer shell. Never replace it.
-       if(sel!=='.j_readContent'){
-         let nested=false;
-         try{nested=!!e.querySelector(specificSelector)}catch(_){}
-         if(nested)continue;
-       }
-
-       if(pc>=2 || sel==='.j_readContent' || sel==='.cha-content'){
-         best=e;bestLen=t.length;bestSelector=sel;
-         break;
-       }
+       const pc=e.querySelectorAll('p').length;
+       const n=noise(t);
+       const score=t.length+Math.min(pc,30)*450-n*1200+(sel==='.j_readContent'?3000:0);
+       if((pc>=2||sel==='.j_readContent'||sel==='.cha-content')&&score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector=sel;}
      }
    }catch(_){}
-   if(best)break;
  }
-
- // Generic fallback for unusual sites: reject wrappers around a known
- // chapter body and penalize nodes containing lots of controls.
  if(!best){
-   for(const e of document.querySelectorAll('main,section,div')){
+   for(const e of document.querySelectorAll('main,article,section,div')){
      const t=textOf(e),pc=e.querySelectorAll('p').length;
      if(t.length<500||pc<3)continue;
-     try{if(e.querySelector(specificSelector))continue;}catch(_){}
-     const controls=e.querySelectorAll('a,button,[role="button"],input,select').length;
-     const noiseCount=noise(t);
-     const score=t.length+Math.min(pc,30)*300-noiseCount*1600-Math.min(controls,30)*250;
-     if(score>bestLen){best=e;bestLen=score;bestSelector='';}
+     const score=t.length+Math.min(pc,30)*450-noise(t)*1200;
+     if(score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector='';}
    }
  }
-
  if(!best||bestLen<120)return JSON.stringify({ok:false});
  const titleSelectors=isWebNovel
    ? ['.chapter-title','.j_chapterName','.chapter-name','.chr-title','#chapter-heading','h1','h2']
