@@ -21,6 +21,7 @@ class MainActivity : Activity() {
     private lateinit var split: SplitLayout
     private lateinit var status: TextView
     private lateinit var promptStore: PromptStore
+    private lateinit var glossaryStore: GlossaryStore
     private val handler=Handler(Looper.getMainLooper())
 
     private var provider=AiProvider.CHATGPT
@@ -53,6 +54,7 @@ class MainActivity : Activity() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         promptStore=PromptStore(this)
+        glossaryStore=GlossaryStore(this)
         searchEngine=getPreferences(0).getString("search_engine","Google") ?: "Google"
         readerNight=getPreferences(0).getBoolean("reader_night",false)
         readerFontSize=getPreferences(0).getInt("reader_font_size",20).coerceIn(18,24)
@@ -218,7 +220,18 @@ class MainActivity : Activity() {
     private fun sendChapter(ch:Chapter){
         val request=++aiJob
         val targetProvider=provider
-        val prompt=promptStore.get().replace("{{CHAPTER}}",ch.text)
+        val relevantGlossary=glossaryStore.match(ch.text)
+        val basePrompt=promptStore.get()
+        val glossaryBlock=if(relevantGlossary.isEmpty()) "" else
+            "\n\n[GLOSSARY — FIXED TERMINOLOGY]\n" +
+            "Use the exact Bengali translation for every matched term below. Do not replace it with another synonym.\n" +
+            relevantGlossary.joinToString("\n"){"${it.source} => ${it.translation}"} +
+            "\n[/GLOSSARY]\n"
+        val promptWithGlossary=if(basePrompt.contains("{{GLOSSARY}}"))
+            basePrompt.replace("{{GLOSSARY}}",glossaryBlock)
+        else
+            basePrompt.replace("{{CHAPTER}}",glossaryBlock+"\n{{CHAPTER}}")
+        val prompt=promptWithGlossary.replace("{{CHAPTER}}",ch.text)
         status("Waiting for ${targetProvider.label}…")
         waitAiIdle(request,session,ch,targetProvider,0,prompt)
     }
@@ -416,7 +429,7 @@ class MainActivity : Activity() {
         val items=arrayOf(
             "‹ Previous chapter","↻ Reload novel page","↻ Reload chatbot",
             "⌫ Clear chatbot input","▣ Split view","📖 Novel only","💬 Chatbot only",
-            "↩ Restore original chapter","✎ Translation prompt","Aa Reader style",
+            "↩ Restore original chapter","✎ Translation prompt","📚 Glossary","Aa Reader style",
             "AI provider: ${provider.label}","Search engine: $searchEngine","Ad blocker: $ad"
         )
         AlertDialog.Builder(this).setTitle("NovelReaderX").setItems(items){_,which->
@@ -426,10 +439,43 @@ class MainActivity : Activity() {
                 4->{viewMode=0;split.showSplit()};5->{viewMode=1;split.showNovelOnly()}
                 6->{viewMode=2;split.showAiOnly()}
                 7->novel.evaluateJavascript(NovelJs.restoreOriginal()){status("Original chapter restored")}
-                8->editPrompt();9->readerSettings();10->chooseProvider();11->chooseSearchEngine()
-                12->{AdBlock.setEnabled(this,!AdBlock.enabled(this));status("Ad blocker "+if(AdBlock.enabled(this))"ON" else "OFF");novel.reload()}
+                8->editPrompt();9->editGlossary();10->readerSettings();11->chooseProvider();12->chooseSearchEngine()
+                13->{AdBlock.setEnabled(this,!AdBlock.enabled(this));status("Ad blocker "+if(AdBlock.enabled(this))"ON" else "OFF");novel.reload()}
             }
         }.show()
+    }
+
+
+    private fun editGlossary(){
+        val input=EditText(this).apply{
+            setText(glossaryStore.raw())
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            setHint("dantian | dan tian | 丹田 => ডান্টিয়ান")
+            minLines=18
+            gravity=Gravity.TOP
+            setSingleLine(false)
+        }
+        val note=TextView(this).apply{
+            text="One entry per line: variant | variant | variant => fixed Bengali.\\nOnly terms found in the current chapter are sent to the AI."
+            setTextColor(Color.LTGRAY)
+            textSize=12f
+            setPadding(dp(8),0,dp(8),0)
+        }
+        val panel=LinearLayout(this).apply{
+            orientation=LinearLayout.VERTICAL
+            addView(note)
+            addView(input,LinearLayout.LayoutParams(-1,dp(360)))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Glossary")
+            .setView(panel)
+            .setNegativeButton("Cancel",null)
+            .setPositiveButton("Save"){_,_->
+                glossaryStore.save(input.text.toString())
+                status("Glossary saved • ${glossaryStore.count()} entries")
+            }
+            .show()
     }
 
     private fun readerSettings(){
