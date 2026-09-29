@@ -9,8 +9,18 @@ object WebNovelAdapter {
 (function(){
  const clean=s=>(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
  const BAD='script,style,noscript,iframe,nav,header,footer,aside,form,button,svg,img,video,audio,canvas,[aria-hidden="true"],[hidden],.ads,.ad,[class*="advert" i],[id*="advert" i],[class*="comment" i],[id*="comment" i],[class*="sidebar" i],[id*="sidebar" i],[class*="toolbar" i],[id*="toolbar" i],[class*="cookie" i],[id*="cookie" i],[class*="popup" i],[id*="popup" i],.j_catalog_list,.j_readTool';
+ const BLOCK='p,blockquote,pre,li';
  const semantic=/(^|[-_ ])(?:chapter|content|reader|reading|novel|story|prose|article|entry|post|text|body|main)([-_ ]|$)/i;
- const uiWord=/(comment|reply|share|follow|login|sign.?in|register|subscribe|advert|cookie|menu|sidebar|toolbar|navigation|download app|read offline)/i;
+ const chapterName=/(chapter|chap|episode|ep|part|volume|prologue|epilogue)/i;
+ const uiWord=/(comment|reply|share|follow|login|sign.?in|register|subscribe|advert|cookie|menu|sidebar|toolbar|navigation|download app|read offline|table of contents)/i;
+
+ const visible=e=>{
+   if(!e||e===document.body||e===document.documentElement)return false;
+   const s=getComputedStyle(e);
+   if(s.display==='none'||s.visibility==='hidden'||s.visibility==='collapse'||s.opacity==='0')return false;
+   const r=e.getBoundingClientRect?.();
+   return !!r&&r.width>20&&r.height>20;
+ };
  const textOf=e=>{
    if(!e)return '';
    const c=e.cloneNode(true);
@@ -18,58 +28,114 @@ object WebNovelAdapter {
    c.querySelectorAll('br').forEach(x=>x.replaceWith('\n'));
    return clean(c.textContent||'');
  };
- const directBlocks=e=>e?e.querySelectorAll(':scope > p,:scope > div,:scope > section,:scope > article,:scope > blockquote,:scope > li').length:0;
- const paragraphCount=e=>e?e.querySelectorAll('p,blockquote').length:0;
- const linkTextLength=e=>{
-   let n=0;
-   try{e.querySelectorAll('a,button,[role="button"]').forEach(x=>n+=(x.innerText||x.textContent||'').trim().length)}catch(_){}
-   return n;
+ const ownText=e=>{
+   let out='';
+   for(const n of e?.childNodes||[]){
+     if(n.nodeType===Node.TEXT_NODE)out+=' '+(n.nodeValue||'');
+     else if(n.nodeType===Node.ELEMENT_NODE && n.tagName==='BR')out+='\n';
+   }
+   return clean(out);
  };
- const depth=e=>{let n=0;for(let x=e;x&&x!==document.body;x=x.parentElement)n++;return n};
- const scoreElement=e=>{
-   if(!e||e===document.body||e===document.documentElement)return null;
+ const blockStats=e=>{
+   const blocks=[...e.querySelectorAll(BLOCK)].filter(x=>visible(x));
+   let useful=0,total=0;
+   for(const b of blocks){
+     const t=clean(b.textContent||'');
+     if(t.length>=20 && t.length<=12000){useful++;total+=t.length}
+   }
+   return {count:useful,total};
+ };
+ const metaOf=e=>((e.id||'')+' '+(typeof e.className==='string'?e.className:'')+' '+(e.getAttribute?.('role')||'')).toLowerCase();
+
+ // The important part: find the LOWEST visible element that actually owns the
+ // chapter text. Ancestor wrappers are rejected when a descendant owns most
+ // of the same text. This prevents comments/recommendations/page shells from
+ // winning merely because they contain more characters.
+ const raw=[...document.querySelectorAll('article,main,[role="main"],section,div')];
+ const candidates=[];
+ for(const e of raw){
+   if(!visible(e))continue;
    const t=textOf(e),len=t.length;
-   if(len<120)return null;
-   const pc=Math.min(paragraphCount(e),50);
-   const db=Math.min(directBlocks(e),60);
-   const links=linkTextLength(e);
-   const ratio=links/Math.max(1,len);
-   const meta=((e.id||'')+' '+(e.className&&typeof e.className==='string'?e.className:'')+' '+(e.getAttribute?.('role')||'')).toLowerCase();
-   let score=Math.log2(len+1)*900+Math.min(len,12000)*0.45+pc*700+db*220;
-   if(e.matches?.('article,main,[role="main"]'))score+=2500;
-   if(semantic.test(meta))score+=5000;
-   if(/chapter|prose|reader|reading/.test(meta))score+=3500;
+   if(len<180||len>120000)continue;
+   const bs=blockStats(e),meta=metaOf(e);
+   const own=ownText(e).length;
+   let score=0;
+   score += Math.log2(len+1)*250;
+   score += Math.min(bs.total,30000)*0.18;
+   score += Math.min(bs.count,80)*650;
+   score += Math.min(own,1500)*0.4;
+   if(e.matches?.('article,main,[role="main"]'))score+=700;
+   if(semantic.test(meta))score+=2200;
+   if(/chapter|prose|reader|reading/.test(meta))score+=2200;
    if(uiWord.test(meta))score-=5000;
-   if(ratio>.35)score-=Math.min(9000,ratio*12000);
-   if(len>30000)score-=Math.min(12000,(len-30000)*0.12);
-   score-=Math.max(0,depth(e)-12)*120;
-   const r=e.getBoundingClientRect?.();
-   if(r&&r.width>20&&r.height>20)score+=500;
-   return {e,t,len,score,pc,db};
- };
- const elements=[...document.querySelectorAll('article,main,[role="main"],section,div')];
- let best=null;
- for(const e of elements){
-   const x=scoreElement(e);
-   if(!x)continue;
-   if(!best||x.score>best.score)best=x;
+   const r=e.getBoundingClientRect();
+   if(r.width>120&&r.height>150)score+=300;
+
+   // If a visible descendant contains most of this element's text, this is
+   // almost certainly just a wrapper. Penalize the wrapper heavily.
+   let nestedMax=0,nestedEl=null;
+   for(const d of e.querySelectorAll('article,main,[role="main"],section,div')){
+     if(!visible(d)||d===e)continue;
+     const dl=textOf(d).length;
+     if(dl>nestedMax){nestedMax=dl;nestedEl=d}
+   }
+   if(nestedMax>0 && nestedMax/len>=0.72){
+     score-=9000;
+     if(nestedMax/len>=0.9)score-=7000;
+   }
+
+   // A chapter root normally has several paragraph-like blocks and little
+   // navigation/link text.
+   let linkLen=0;
+   try{e.querySelectorAll('a,button,[role="button"]').forEach(x=>linkLen+=(x.innerText||x.textContent||'').trim().length)}catch(_){}
+   const linkRatio=linkLen/Math.max(1,len);
+   if(linkRatio>.25)score-=Math.min(10000,linkRatio*14000);
+   if(bs.count>=3)score+=1800;
+   if(bs.count>=8)score+=1800;
+   candidates.push({e,t,len,score,blocks:bs.count,nestedMax});
  }
+
+ // Prefer the deepest/most chapter-like candidate rather than a huge page shell.
+ candidates.sort((a,b)=>b.score-a.score);
+ let best=candidates[0]||null;
  if(!best){
-   for(const e of document.querySelectorAll('p,blockquote')){
-     const x=scoreElement(e);
-     if(x&&(!best||x.score>best.score))best=x;
+   for(const e of document.querySelectorAll(BLOCK)){
+     if(!visible(e))continue;
+     const t=textOf(e);
+     if(t.length>=180) {best={e,t,len:t.length,score:0,blocks:1};break}
    }
  }
  if(!best||best.len<120)return JSON.stringify({ok:false});
- let body=best.t;
+
+ // Final guard: if the chosen node is itself a wrapper, descend to the
+ // strongest visible child that still contains most of the chapter.
+ let changed=true;
+ while(changed){
+   changed=false;
+   let childBest=null, childScore=-Infinity;
+   for(const d of best.e.querySelectorAll('article,main,[role="main"],section,div')){
+     if(!visible(d))continue;
+     const dt=textOf(d),ratio=dt.length/Math.max(1,best.len);
+     if(ratio<0.72||dt.length<180)continue;
+     const bs=blockStats(d),m=metaOf(d);
+     let s=ratio*4000+bs.count*700+(semantic.test(m)?1800:0)+(chapterName.test(m)?2200:0);
+     if(uiWord.test(m))s-=5000;
+     if(s>childScore){childScore=s;childBest={e:d,t:dt,len:dt.length,score:s,blocks:bs.count}}
+   }
+   if(childBest && childBest.score>5000){best=childBest;changed=true}
+ }
+
+ let body=textOf(best.e);
  let title='';
  const titleCandidates=[...document.querySelectorAll('h1,h2,[class*="title" i],[id*="title" i]')];
  let titleScore=-1;
  for(const e of titleCandidates){
+   if(!visible(e))continue;
    const t=clean(e.textContent);
    if(!t||t.length>180||uiWord.test(t))continue;
    let s=0;
-   if(/^chapter\s*[-#:.]?\s*\d+/i.test(t)||/^episode\s*[-#:.]?\s*\d+/i.test(t)||/^ch\.?\s*\d+/i.test(t))s+=8;
+   if(/^chapter\s*[-#:.]?\s*\d+/i.test(t)||/^episode\s*[-#:.]?\s*\d+/i.test(t)||/^ch\.?\s*\d+/i.test(t)||/^part\s*[-#:.]?\s*\d+/i.test(t))s+=10;
+   if(chapterName.test(t))s+=3;
    if(e.tagName==='H1')s+=5; else if(e.tagName==='H2')s+=3;
    if(t.length<100)s+=2;
    if(s>titleScore){titleScore=s;title=t}
@@ -85,23 +151,40 @@ object WebNovelAdapter {
  }).join('\n\n').trim();
  if(title&&body.toLowerCase().startsWith(title.toLowerCase()))body=body.slice(title.length).trim();
  if(body.length<120)return JSON.stringify({ok:false});
- const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
+
+ const num=(title.match(/(?:chapter|chap|ch|episode|ep|part)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
+
+ // Build a stable selector that points to the exact chosen content root.
  const selectorFor=e=>{
    if(!e)return '';
-   if(e.id&&/^[A-Za-z_][A-Za-z0-9_-]*$/.test(e.id))return '#'+e.id;
-   const cls=[...e.classList].filter(x=>/^[A-Za-z_][A-Za-z0-9_-]*$/.test(x)).slice(0,3);
-   return e.tagName.toLowerCase()+(cls.length?'.'+cls.join('.'):'' );
+   if(e.id&&/^[A-Za-z_][A-Za-z0-9_-]*$/.test(e.id))return '#'+CSS.escape(e.id);
+   const parts=[];
+   let x=e;
+   while(x&&x!==document.body&&parts.length<6){
+     let p=x.tagName.toLowerCase();
+     const cls=[...x.classList].filter(v=>/^[A-Za-z_][A-Za-z0-9_-]*$/.test(v)).slice(0,2);
+     if(cls.length)p+='.'+cls.map(v=>CSS.escape(v)).join('.');
+     const parent=x.parentElement;
+     if(parent){
+       const same=[...parent.children].filter(y=>y.tagName===x.tagName);
+       if(same.length>1)p+=':nth-of-type('+(same.indexOf(x)+1)+')';
+     }
+     parts.unshift(p);x=parent;
+   }
+   return parts.join(' > ');
  };
  window.__nrContentElement=best.e;
  window.__nrContentSelector=selectorFor(best.e);
+ window.__nrContentSignature={url:location.href,textHash:body.length+':'+body.slice(0,160),element:best.e};
+
  const links=[...document.querySelectorAll('a[href],button,[role="button"]')];
  function pick(next){
-   const re=next?/^(?:next|next chapter|continue|older|newer)\b|next chapter|continue reading|›|»|→/i:/^(?:prev|previous|previous chapter|older|newer)\b|previous chapter|‹|«|←/i;
+   const re=next?/^(?:next|next chapter|continue|continue reading|newer)\b|next chapter|continue reading|›|»|→/i:/^(?:prev|previous|previous chapter|older)\b|previous chapter|‹|«|←/i;
    let target=null,bestScore=-1;
    for(const e of links){
+     if(!visible(e))continue;
      const meta=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,typeof e.className==='string'?e.className:''].join(' ');
      if(!re.test(meta))continue;
-     const r=e.getBoundingClientRect();if(r.width<2||r.height<2)continue;
      let s=0;
      if(/chapter/i.test(meta))s+=5;
      if(e.tagName==='A'&&e.href)s+=3;
