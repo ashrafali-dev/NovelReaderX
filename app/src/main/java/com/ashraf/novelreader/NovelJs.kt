@@ -55,25 +55,19 @@ object NovelJs {
     try{if(p.closest(skip))continue}catch(_){}
     nodes.push(n);
   }
+  const blocks=[];
   nodes.forEach(x=>{
+    const parent=x.parentElement;
     const s=document.createElement('span');
     s.setAttribute('data-nr-hidden-original','1');
     s.style.display='none';
     x.parentNode.insertBefore(s,x);
     s.appendChild(x);
-  });
-
-  // Collapse now-empty text-only blocks, but never collapse a block that
-  // contains a link/button/control. This preserves the site's own controls.
-  [...el.querySelectorAll('p,div,section,article,li')].reverse().forEach(e=>{
-    if(e===el || e.hasAttribute('data-nr-translation'))return;
-    const visibleText=clean(e.innerText||'');
-    const interactive=e.querySelector('a,button,[role="button"],input,select,textarea,.j_readTool,.j_catalog_list');
-    if(!interactive && !visibleText){
-      const cs=getComputedStyle(e);
-      if(cs.position!=='fixed' && cs.position!=='sticky') e.style.display='none';
+    if(parent && /^(P|LI|BLOCKQUOTE)$/i.test(parent.tagName) && !parent.querySelector('a,button,[role="button"],input,select,textarea')){
+      blocks.push(parent);
     }
   });
+  blocks.forEach(e=>{e.style.display='none';});
 
   const trans=document.createElement('div');
   trans.setAttribute('data-nr-translation','1');
