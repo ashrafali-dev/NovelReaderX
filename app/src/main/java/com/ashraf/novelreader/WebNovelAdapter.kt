@@ -30,47 +30,30 @@ object WebNovelAdapter {
    : ['#chapter-content','.chapter-content','.chapter_content','#chr-content','.chr-c','.reading-content','.text-left','#content','.entry-content','.cha-content','.cha-words','.chapter-body','.novel_content','.j_readContent','.txt','#chaptercontent','.chapter-c','#article','.article-content','.content','article'];
  let best=null,bestLen=0,bestScore=-Infinity,bestSelector='';
 
- // WebNovel keeps its own known reader selectors. Do not alter this path.
- if(isWebNovel){
-   for(const sel of candidates){
-     try{
-       for(const e of document.querySelectorAll(sel)){
-         const t=textOf(e);
-         if(t.length<300)continue;
-         const pc=e.querySelectorAll('p').length;
-         const n=noise(t);
-         const score=t.length+Math.min(pc,30)*450-n*1200+(sel==='.j_readContent'?3000:0);
-         if((pc>=2||sel==='.j_readContent'||sel==='.cha-content')&&score>bestScore){
-           best=e;bestLen=t.length;bestScore=score;bestSelector=sel;
-         }
-       }
-     }catch(_){}
-   }
- }else{
-   // For every other site use the old NovelStudio-style selector priority:
-   // first find a real chapter container with substantial text; do not let a
-   // generic outer .content/article win merely because it is larger.
-   for(const sel of candidates){
-     try{
-       const e=document.querySelector(sel);
-       if(!e)continue;
+ // Keep the known-good WebNovel extraction path. It deliberately uses
+ // selector priority first, then the text-rich fallback from the working
+ // NovelStudio-era extractor. Do not special-case WebNovel by removing the
+ // fallback: WebNovel's reader DOM can change between pages.
+ for(const sel of candidates){
+   try{
+     for(const e of document.querySelectorAll(sel)){
        const t=textOf(e);
-       if(t.length>=500){
-         best=e;bestLen=t.length;bestScore=t.length;bestSelector=sel;
-         break;
+       if(t.length<300)continue;
+       const pc=e.querySelectorAll('p').length;
+       const n=noise(t);
+       const score=t.length+Math.min(pc,30)*450-n*1200+(sel==='.j_readContent'?3000:0);
+       if((pc>=2||sel==='.j_readContent'||sel==='.cha-content')&&score>bestScore){
+         best=e;bestLen=t.length;bestScore=score;bestSelector=sel;
        }
-     }catch(_){}
-   }
-
-   // Last resort: choose the text-richest block, but require actual paragraph
-   // structure so a title/header container cannot be mistaken for the chapter.
-   if(!best){
-     for(const e of document.querySelectorAll('main,article,section,div')){
-       const t=textOf(e),pc=e.querySelectorAll('p').length;
-       if(t.length<500||pc<3)continue;
-       const score=t.length+Math.min(pc,30)*450-noise(t)*1200;
-       if(score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector='';}
      }
+   }catch(_){}
+ }
+ if(!best){
+   for(const e of document.querySelectorAll('main,article,section,div')){
+     const t=textOf(e),pc=e.querySelectorAll('p').length;
+     if(t.length<500||pc<3)continue;
+     const score=t.length+Math.min(pc,30)*450-noise(t)*1200;
+     if(score>bestScore){best=e;bestLen=t.length;bestScore=score;bestSelector='';}
    }
  }
  if(!best||bestLen<120)return JSON.stringify({ok:false});
