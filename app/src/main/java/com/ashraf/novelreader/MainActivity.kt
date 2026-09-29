@@ -189,11 +189,11 @@ class MainActivity : Activity() {
     private fun instant(){
         ai.evaluateJavascript(ProviderScripts.clearComposerScript()){ hideKeyboard() }
         val token=session
-        novel.evaluateJavascript(NovelJs.extract()){raw->
-            if(token!=session)return@evaluateJavascript
-            val ch=WebNovelAdapter.buildChapter(raw?.unquoteJs().orEmpty())
-            if(ch!=null)handleChapter(ch,true) else status("Chapter text not found")
-        }
+        status("Finding chapter…")
+        // The reader DOM may mount a moment after the page itself finishes.
+        // Reuse the same short retry path used after navigation instead of
+        // failing on the first DOM snapshot.
+        fastExtract(0,token,novel.url.orEmpty())
     }
 
     private fun fastExtract(attempt:Int,token:Long,url:String){
