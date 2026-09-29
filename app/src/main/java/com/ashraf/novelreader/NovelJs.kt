@@ -143,30 +143,11 @@ object NovelJs {
       s.active=!s.active;
       if(s.active){
         for(let i=0;i<s.nodeSets.length;i++){
-          const vals=(function(v,n){return v})(s.translated[i]||'',s.nodeSets[i]);
-        }
-      }
-      for(let i=0;i<s.nodeSets.length;i++){
-        if(s.active){
-          const vals=(function(value,nodes){
-            if(nodes.length===1)return [value];
-            const weights=nodes.map(n=>Math.max(1,(n.nodeValue||'').length));
-            const total=weights.reduce((a,b)=>a+b,0);
-            const out=[];let from=0,sum=0;
-            for(let k=0;k<nodes.length;k++){
-              if(k===nodes.length-1){out.push(value.slice(from));break}
-              sum+=weights[k];
-              let target=Math.round(value.length*sum/total);
-              if(target>from&&target<value.length){
-                for(let z=target;z>=Math.max(from,target-18);z--){if(/\s/.test(value[z])){target=z;break}}
-              }
-              out.push(value.slice(from,target).trimStart());from=target;
-            }
-            while(out.length<nodes.length)out.push('');
-            return out;
-          })(s.translated[i]||'',s.nodeSets[i]);
+          const vals=splitForNodes(s.translated[i]||'',s.nodeSets[i]);
           for(let j=0;j<s.nodeSets[i].length;j++)s.nodeSets[i][j].nodeValue=vals[j]||'';
-        }else{
+        }
+      }else{
+        for(let i=0;i<s.nodeSets.length;i++){
           for(let j=0;j<s.nodeSets[i].length;j++)s.nodeSets[i][j].nodeValue=s.originals[i][j]||'';
         }
       }
@@ -183,8 +164,10 @@ object NovelJs {
 
     fun restoreOriginal():String = """
 (()=>{const s=window.__nrTranslationState;
-if(!s||!s.blocks?.length)return 'none';
-for(let i=0;i<s.blocks.length;i++)s.blocks[i].textContent=s.originals[i]||'';
+if(!s||!s.nodeSets?.length)return 'none';
+for(let i=0;i<s.nodeSets.length;i++)
+  for(let j=0;j<s.nodeSets[i].length;j++)
+    s.nodeSets[i][j].nodeValue=s.originals[i][j]||'';
 s.active=false;
 const b=document.getElementById('novelreaderx-toggle-host')?.shadowRoot?.getElementById('b');
 if(b)b.textContent='বাংলা';
