@@ -7,7 +7,7 @@ object WebNovelAdapter {
 
     fun extractScript(): String = """
 (function(){
- const clean=s=>(s||'').replace(/\\u00a0/g,' ').replace(/[ \\t]+/g,' ').replace(/\\n[ \\t]+/g,'\\n').replace(/\\n{3,}/g,'\\n\\n').trim();
+ const clean=s=>(s||'').replace(/\u00a0/g,' ').replace(/[ \t]+/g,' ').replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
  const BAD='script,style,noscript,iframe,nav,header,footer,aside,form,button,svg,img,video,audio,canvas,[aria-hidden="true"],[hidden],.ads,.ad,[class*="advert" i],[id*="advert" i],[class*="comment" i],[id*="comment" i],[class*="sidebar" i],[id*="sidebar" i],[class*="toolbar" i],[id*="toolbar" i],[class*="cookie" i],[id*="cookie" i],[class*="popup" i],[id*="popup" i],.j_catalog_list,.j_readTool';
  const semantic=/(^|[-_ ])(?:chapter|content|reader|reading|novel|story|prose|article|entry|post|text|body|main)([-_ ]|$)/i;
  const uiWord=/(comment|reply|share|follow|login|sign.?in|register|subscribe|advert|cookie|menu|sidebar|toolbar|navigation|download app|read offline)/i;
@@ -15,7 +15,7 @@ object WebNovelAdapter {
    if(!e)return '';
    const c=e.cloneNode(true);
    try{c.querySelectorAll(BAD).forEach(x=>x.remove())}catch(_){}
-   c.querySelectorAll('br').forEach(x=>x.replaceWith('\\n'));
+   c.querySelectorAll('br').forEach(x=>x.replaceWith('\n'));
    return clean(c.textContent||'');
  };
  const directBlocks=e=>e?e.querySelectorAll(':scope > p,:scope > div,:scope > section,:scope > article,:scope > blockquote,:scope > li').length:0;
@@ -69,23 +69,23 @@ object WebNovelAdapter {
    const t=clean(e.textContent);
    if(!t||t.length>180||uiWord.test(t))continue;
    let s=0;
-   if(/^chapter\\s*[-#:.]?\\s*\\d+/i.test(t)||/^episode\\s*[-#:.]?\\s*\\d+/i.test(t)||/^ch\\.?\\s*\\d+/i.test(t))s+=8;
+   if(/^chapter\s*[-#:.]?\s*\d+/i.test(t)||/^episode\s*[-#:.]?\s*\d+/i.test(t)||/^ch\.?\s*\d+/i.test(t))s+=8;
    if(e.tagName==='H1')s+=5; else if(e.tagName==='H2')s+=3;
    if(t.length<100)s+=2;
    if(s>titleScore){titleScore=s;title=t}
  }
  if(!title)title=clean(document.title||'');
  const titleNorm=clean(title).toLowerCase();
- body=body.split(/\\n+/).map(x=>x.trim()).filter(x=>{
+ body=body.split(/\n+/).map(x=>x.trim()).filter(x=>{
    const n=clean(x).toLowerCase();
    if(!n)return false;
    if(titleNorm&&n===titleNorm)return false;
    if(uiWord.test(n)&&n.length<180)return false;
    return true;
- }).join('\\n\\n').trim();
+ }).join('\n\n').trim();
  if(title&&body.toLowerCase().startsWith(title.toLowerCase()))body=body.slice(title.length).trim();
  if(body.length<120)return JSON.stringify({ok:false});
- const num=(title.match(/(?:chapter|chap|ch|episode|ep)\\.?\\s*[-#:.]?\\s*(\\d+(?:\\.\\d+)?)/i)||title.match(/第\\s*(\\d+)\\s*[章话話節回]/)||[])[1]||'';
+ const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
  const selectorFor=e=>{
    if(!e)return '';
    if(e.id&&/^[A-Za-z_][A-Za-z0-9_-]*$/.test(e.id))return '#'+e.id;
@@ -96,7 +96,7 @@ object WebNovelAdapter {
  window.__nrContentSelector=selectorFor(best.e);
  const links=[...document.querySelectorAll('a[href],button,[role="button"]')];
  function pick(next){
-   const re=next?/^(?:next|next chapter|continue|older|newer)\\b|next chapter|continue reading|›|»|→/i:/^(?:prev|previous|previous chapter|older|newer)\\b|previous chapter|‹|«|←/i;
+   const re=next?/^(?:next|next chapter|continue|older|newer)\b|next chapter|continue reading|›|»|→/i:/^(?:prev|previous|previous chapter|older|newer)\b|previous chapter|‹|«|←/i;
    let target=null,bestScore=-1;
    for(const e of links){
      const meta=[e.innerText,e.getAttribute('aria-label'),e.getAttribute('title'),e.id,typeof e.className==='string'?e.className:''].join(' ');
@@ -110,7 +110,7 @@ object WebNovelAdapter {
    }
    return target?.href||null;
  }
- const chapterText=title?(title+'\\n\\n'+body):body;
+ const chapterText=title?(title+'\n\n'+body):body;
  return JSON.stringify({ok:true,url:location.href,title,num,text:chapterText,next:pick(true),prev:pick(false)});
 })()
 """.trimIndent()
