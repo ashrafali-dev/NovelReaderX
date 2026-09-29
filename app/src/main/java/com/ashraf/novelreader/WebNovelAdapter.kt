@@ -52,15 +52,19 @@ object WebNovelAdapter {
  // of the same text. This prevents comments/recommendations/page shells from
  // winning merely because they contain more characters.
  const raw=[...document.querySelectorAll('article,main,[role="main"],section,div')];
+ const DIRECT='[data-chapter-body],[data-chapter-content],[class*="chapter-body" i],[class*="chapter-content" i],[class*="novel-content" i],[class*="reading-content" i],[class*="reader-content" i]';
+ const directRoots=[...document.querySelectorAll(DIRECT)].filter(e=>visible(e));
  const candidates=[];
  for(const e of raw){
    if(!visible(e))continue;
    const t=textOf(e),len=t.length;
    if(len<180||len>120000)continue;
    const bs=blockStats(e),meta=metaOf(e);
+   const isDirect=directRoots.includes(e);
    // A chapter root normally owns multiple paragraph-like blocks. A single
-   // long paragraph is not enough: choosing it loses the rest of the chapter.
-   if(bs.count<2 && !/(chapter|content|reader|reading|prose|article|story)/i.test(meta))continue;
+   // long paragraph is not enough unless the site explicitly identifies the
+   // element as chapter/content/reader text.
+   if(bs.count<2 && !isDirect && !/(chapter|content|reader|reading|prose|article|story)/i.test(meta))continue;
    const own=ownText(e).length;
    let score=0;
    score += Math.log2(len+1)*250;
@@ -68,6 +72,7 @@ object WebNovelAdapter {
    score += Math.min(bs.count,80)*650;
    score += Math.min(own,1500)*0.4;
    if(e.matches?.('article,main,[role="main"]'))score+=700;
+   if(isDirect)score+=12000;
    if(semantic.test(meta))score+=2200;
    if(/chapter|prose|reader|reading/.test(meta))score+=2200;
    if(uiWord.test(meta))score-=5000;
@@ -83,8 +88,12 @@ object WebNovelAdapter {
      if(dl>nestedMax){nestedMax=dl;nestedEl=d}
    }
    if(nestedMax>0 && nestedMax/len>=0.72){
-     score-=9000;
-     if(nestedMax/len>=0.9)score-=7000;
+     // A directly identified chapter/content root is authoritative; its
+     // descendant may be a single paragraph or formatting container.
+     if(!isDirect){
+       score-=9000;
+       if(nestedMax/len>=0.9)score-=7000;
+     }
    }
 
    // A chapter root normally has several paragraph-like blocks and little
@@ -100,14 +109,28 @@ object WebNovelAdapter {
    candidates.push({e,t,len,score,blocks:bs.count,nestedMax});
  }
 
- // Prefer the deepest/most chapter-like candidate rather than a huge page shell.
+ // Prefer an explicitly identified chapter/content root first. This
+ // prevents a generic paragraph from winning when the page already exposes
+ // the real chapter container.
  candidates.sort((a,b)=>b.score-a.score);
- let best=candidates[0]||null;
+ let best=candidates.find(x=>directRoots.includes(x.e))||candidates[0]||null;
  if(!best){
+   // Last resort: use the largest text-bearing block, but keep its containing
+   // element as the chapter root when possible so we do not throw away sibling
+   // paragraphs.
+   let largest=null;
    for(const e of document.querySelectorAll(BLOCK)){
      if(!visible(e))continue;
      const t=textOf(e);
-     if(t.length>=180) {best={e,t,len:t.length,score:0,blocks:1};break}
+     if(t.length>=180 && (!largest || t.length>largest.t.length))largest={e,t};
+   }
+   if(largest){
+     let root=largest.e.parentElement;
+     while(root && root!==document.body && textOf(root).length<largest.t.length*1.15){
+       root=root.parentElement;
+     }
+     const rt=root&&root!==document.body?textOf(root):largest.t;
+     best={e:root&&root!==document.body?root:largest.e,t:rt,len:rt.length,score:0,blocks:blockStats(root&&root!==document.body?root:largest.e).count};
    }
  }
  if(!best||best.len<120)return JSON.stringify({ok:false});
