@@ -130,8 +130,11 @@ class MainActivity : Activity() {
         right.addView(iconBtn("◫","Split / Novel / Chatbot"){cycleView()})
         right.addView(iconBtn("G","ChatGPT"){switchProvider(AiProvider.CHATGPT)})
         right.addView(iconBtn("✦","Gemini"){switchProvider(AiProvider.GEMINI)})
-        // Left: view controls. Right: menu.
+        // Toolbar: ◫ G ✦ on the left, ⚡ › in the center, ⋮ on the right.
+        more.layoutParams=FrameLayout.LayoutParams(dp(46),dp(42),Gravity.END or Gravity.CENTER_VERTICAL)
+        right.layoutParams=FrameLayout.LayoutParams(-2,-1,Gravity.START or Gravity.CENTER_VERTICAL)
         bottom.addView(right)
+        bottom.addView(center)
         bottom.addView(more)
         root.addView(bottom,LinearLayout.LayoutParams(-1,dp(48)))
         handler.postDelayed(pulse,1200)
