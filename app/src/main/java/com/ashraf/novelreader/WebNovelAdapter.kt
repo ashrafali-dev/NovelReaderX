@@ -70,6 +70,11 @@ object WebNovelAdapter {
    return true;
  }).join('\n\n').trim();
  if(title&&body.toLowerCase().startsWith(title.toLowerCase()))body=body.slice(title.length).trim();
+
+ // Do not send a chapter containing only its title/metadata. Some SPA sites
+ // render the heading first and the chapter body a moment later.
+ if(body.length<120)return JSON.stringify({ok:false});
+
  const num=(title.match(/(?:chapter|chap|ch|episode|ep)\.?\s*[-#:.]?\s*(\d+(?:\.\d+)?)/i)||title.match(/第\s*(\d+)\s*[章话話節回]/)||[])[1]||'';
  const selectorFor=e=>{
    if(!e)return '';
